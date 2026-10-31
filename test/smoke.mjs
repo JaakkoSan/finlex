@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 9, "tools/list (9 työkalua)");
+check(list.result?.tools?.length === 12, "tools/list (12 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -51,6 +51,14 @@ const cases = [
   ["hallituksen_esitys", { vuosi: 2024, numero: "1", osa: "2.3.1" }, (t) => t.includes("Tarve poiketa julkisesta hakumenettelystä")],
   ["hallituksen_esitys", { vuosi: 2024, numero: "1", lakiehdotus: 2 }, (t) => t.includes("34 g §")],
   ["etsi_hallituksen_esityksesta", { vuosi: 2024, numero: "1", hakusana: "kadet" }, (t) => t.includes("Osumat")],
+  ["eduskuntakasittely", { asia: "HE 74/2022 vp" }, (t) => t.includes("PeVL 38/2022 vp") && t.includes("säädös 116/2023")],
+  ["eduskuntakasittely", { asia: "HE 44/2002" }, (t) => t.includes("LaVM 28/2002 vp") && t.includes("1. Laki rikoslain muuttamisesta")],
+  ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp" }, (t) => t.includes("VALIOKUNNAN PÄÄTÖSESITYS") && t.includes("tavallisen lain säätämisjärjestyksessä")],
+  ["eduskunnan_asiakirja", { asiakirja: "StVM 21/2022 vp", pykala: "51 a", laki: "1" }, (t) => t.includes("VALIOKUNNAN PERUSTELUT") && t.includes("«enimmäisajat»")],
+  ["eduskunnan_asiakirja", { asiakirja: "LaVM 28/2002 vp", pykala: "3", luku: "3", laki: "1" }, (t) => t.includes("Laiminlyönnin rangaistavuus")],
+  ["eduskunnan_asiakirja", { asiakirja: "EV 150/2022 vp", pykala: "55" }, (t) => t.includes("HYVÄKSYTTY LAKITEKSTI") && t.includes("Tietojen julkaiseminen")],
+  ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp", hakusana: "perusoikeu" }, (t) => t.includes("Osumat")],
+  ["hae_eduskunnan_asiakirjoja", { valiokunta: "perustuslakivaliokunta", tyyppi: "lausunto", alkaen_vuosi: 2022, paattyen_vuosi: 2022 }, (t) => t.includes("PeVL") && t.includes("2022 vp")],
   ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (t) => t.includes("numero") && t.includes("Tietosuojavaltuutettu")],
   ["hae_ratkaisuja", { lahde: "oikeusasiamies", otsikko: "kotihoito" }, (t) => t.includes("numero")],
   ["hae_ratkaisu", { lahde: "tietosuojavaltuutettu", vuosi: 2025, numero: "2443" }, (t) => t.includes("TSV/61/2021") && t.includes("Asia")],

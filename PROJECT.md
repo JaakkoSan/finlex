@@ -1,6 +1,6 @@
 # PROJECT.md: finlex-mcp
 
-Oma Claude-liitin Finlexin säädösteksteille. Tehty 31.10.2026.
+Oma Claude-liitin Finlexin säädösteksteille ja lakien eduskuntakäsittelylle. Tehty 31.10.2026.
 
 ## Miksi oma
 
@@ -23,6 +23,8 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/proposal.js`: hallituksen esitysten jäsennys ja hakemisto (perustelujen lohkot, pykälien perustelut, lakiehdotukset)
 - `src/finlex.js`: Finlex-rajapinnan asiakas ja välimuisti
 - `src/decisions.js`: viranomaisratkaisut (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) ja PDF-tekstin purku
+- `src/eduskunta.js`: Eduskunnan avoimen datan rajapinnan asiakas (api.eduskunta.fi), tunnusten normalisointi
+- `src/edkDoc.js`: eduskunnan asiakirjan (mietintö, lausunto, eduskunnan vastaus) HTML:n jäsennys lohkoiksi ja pykälähakemistoksi
 - `src/xml.js`: pieni XML-jäsennin
 - `test/smoke.mjs`: savutesti oikeaa Finlexiä vasten
 
@@ -39,3 +41,4 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - 31.10.2026: MIT-lisenssi, repo valmisteltu julkiseksi.
 - 31.10.2026 v1.3: välimuistiin valmiiksi jäsennetty hakemisto raa'an XML:n sijaan (CPU-aika välimuistista n. 2–10 ms, ennen 20–90 ms). Tulevien muutosten merkinnät lisätään vasta pyynnön hetkellä.
 - 31.10.2026 v1.4: hallituksen esitykset (hae_hallituksen_esityksia, hallituksen_esitys, etsi_hallituksen_esityksesta) Finlexin avoimesta datasta. Lähde valittu Finlexistä eduskunnan avoimen datan sijaan, koska Finlexissä esitykset ovat samassa Akoma Ntoso -muodossa kuin säädökset.
+- 31.10.2026 v1.5: eduskuntakäsittely (eduskuntakasittely, eduskunnan_asiakirja, hae_eduskunnan_asiakirjoja) Eduskunnan avoimesta datasta (api.eduskunta.fi, CC BY 4.0). Uusi rajapinta valittu, koska vanhasta (avoindata.eduskunta.fi) luovutaan vuoden 2026 lopussa (eduskunta.fi, avoin data, luettu 31.10.2026). Asiakirjat luetaan HTML-muodossa, koska se on saatavilla myös vuosien 1999–2014 asiakirjoista, joista XML:ää ei ole. hallituksen_esitys-yleiskuvassa viittaus eduskuntakäsittelyyn.

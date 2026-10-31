@@ -28,6 +28,8 @@ import {
 } from "./proposal.js";
 import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
 import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
+import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
+import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch } from "./eduskunta.js";
 import {
   SOURCES,
   decisionUrl,
@@ -212,6 +214,51 @@ export const TOOLS = [
       required: ["vuosi", "numero", "hakusana"],
     },
   },
+  {
+    name: "eduskuntakasittely",
+    description:
+      "Palauttaa asian (esim. hallituksen esitys) käsittelyn eduskunnassa: tila ja lopputulos, valiokunnan mietintö ja lausunnot (esim. perustuslakivaliokunnan lausunto), eduskunnan vastaus, lakiehdotusten päätökset (hyväksytty, hyväksytty muutettuna, hylätty) sekä vahvistettujen lakien säädösnumerot. Lähde: Eduskunnan avoin data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        asia: { type: "string", description: "Asian tunnus, esim. \"HE 74/2022 vp\" tai \"HE 74/2022\". Myös lakialoitteet (LA), kansalaisaloitteet (KAA) ja muut valtiopäiväasiat." },
+      },
+      required: ["asia"],
+    },
+  },
+  {
+    name: "eduskunnan_asiakirja",
+    description:
+      "Palauttaa valiokunnan mietinnön tai lausunnon (esim. StVM 21/2022 vp, PeVL 38/2022 vp) tai eduskunnan vastauksen (EV) tekstiä. Ilman lisäparametreja: perustiedot, sisällys, päätösehdotus tai lausunnon kannanotto sekä pykälät, joita valiokunta perustelee tai muuttaa. Parametrilla pykala valiokunnan perustelut ja ehdotettu tai hyväksytty sanamuoto pykälälle, parametrilla osa yksi lohko ja parametrilla hakusana osumat tekstistä. Vuotta 1999 vanhemmista asiakirjoista ei ole tekstiä.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        asiakirja: { type: "string", description: "Asiakirjan tunnus, esim. \"PeVL 38/2022 vp\", \"StVM 21/2022 vp\" tai \"EV 150/2022 vp\"." },
+        pykala: { type: "string", description: "Pykälä, esim. \"51 a\". Valinnainen." },
+        luku: { type: "string", description: "Luku, jos pykälänumerointi alkaa joka luvussa alusta (esim. rikoslaki). Valinnainen." },
+        laki: { type: "string", description: "Lakiehdotuksen numero (\"1\") tai osa lain nimestä, jos asiakirjassa on useita lakeja. Valinnainen." },
+        osa: { type: "string", description: "Lohko otsikolla (\"Valiokunnan yleisperustelut\"), numerolla tai sisällyksen tunnisteella (\"#12\"). Valinnainen." },
+        hakusana: { type: "string", description: "Etsittävä merkkijono (kirjainkoolla ei väliä). Valinnainen." },
+      },
+      required: ["asiakirja"],
+    },
+  },
+  {
+    name: "hae_eduskunnan_asiakirjoja",
+    description:
+      "Hakee valiokuntien mietintöjä ja lausuntoja sekä eduskunnan vastauksia sanalla tekstistä, valiokunnalla ja vuosilla. Palauttaa tunnukset, päivämäärät ja käsitellyn asian (esim. HE). Yhden hallituksen esityksen asiakirjat saa suoremmin eduskuntakasittely-työkalulla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana tai sanonta asiakirjan tekstistä, esim. \"omaishoito\". Haku vertaa sanoja sellaisinaan, joten kokeile myös taivutusmuotoja (\"omaishoidon\")." },
+        tyyppi: { type: "string", enum: ["mietinto", "lausunto", "vastaus"], description: "Valiokunnan mietintö, valiokunnan lausunto tai eduskunnan vastaus. Oletus: kaikki." },
+        valiokunta: { type: "string", description: "Valiokunnan nimi, esim. \"perustuslakivaliokunta\" tai \"sosiaali- ja terveysvaliokunta\". Valinnainen." },
+        alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
+        paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta, uusimmasta vanhimpaan." },
+      },
+    },
+  },
 ];
 
 // Työkalujen merkinnät (MCP tool annotations): kaikki työkalut vain lukevat
@@ -226,6 +273,9 @@ const TITLES = {
   hae_hallituksen_esityksia: "Hae hallituksen esityksiä",
   hallituksen_esitys: "Hallituksen esitys",
   etsi_hallituksen_esityksesta: "Etsi hallituksen esityksestä",
+  eduskuntakasittely: "Eduskuntakäsittely",
+  eduskunnan_asiakirja: "Eduskunnan asiakirja",
+  hae_eduskunnan_asiakirjoja: "Hae eduskunnan asiakirjoja",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -821,7 +871,9 @@ async function hallituksenEsitys(args) {
   if (b.attachments.length) {
     out.push("Liitteet (teksti liite-parametrilla):");
     b.attachments.forEach((t, i) => out.push(`${i + 1}. ${t}`));
+    out.push("");
   }
+  out.push(`Eduskuntakäsittely (mietintö, lausunnot, muutokset): eduskuntakasittely-työkalulla, asia "HE ${s.number}/${s.year} vp".`);
   return clip(out.join("\n").trimEnd());
 }
 
@@ -866,6 +918,395 @@ async function etsiHallituksenEsityksesta(args) {
     for (const h of hits) out.push("", h.where, `  ${h.text}`);
     out.push("", 'Hae koko lohko hallituksen_esitys-työkalulla, esim. osa: "#12".');
   }
+  return clip(out.join("\n"));
+}
+
+// ---------- Eduskunnan asiakirjat ----------
+
+const MATTER_TTL = 6 * 3600; // käsittely voi olla kesken
+const DOC_TTL = 7 * 86400; // valmis asiakirja muuttuu harvoin (korjausversiot)
+
+function asTunnus(v, what) {
+  const t = normTunnus(v);
+  if (!t) throw new UserError(`Anna ${what} tunnuksena, esim. ${what === "asia" ? '"HE 74/2022 vp"' : '"PeVL 38/2022 vp"'}.`);
+  return t;
+}
+
+const fi = (o) => (o && typeof o === "object" && "fi" in o ? o.fi : o);
+const lc1 = (s) => (s ? s[0].toLowerCase() + s.slice(1) : s);
+
+async function eduskuntakasittely(args) {
+  const tunnus = asTunnus(args.asia, "asia");
+  const m = await fetchMatter(tunnus, MATTER_TTL);
+  if (!m) throw new UserError(`Asiaa ${tunnus} ei löytynyt Eduskunnan avoimesta datasta. Tarkista tunnus (esim. "HE 74/2022 vp").`);
+  const out = [`${fi(m.eduskuntatunnus) ?? tunnus} ${fi(m.nimeke) ?? ""}`.trim()];
+  const info = [];
+  if (fi(m.tila)) info.push(`Tila: ${fi(m.tila)}`);
+  if (fi(m.kokonaispaatosnimi)) info.push(`lopputulos: ${lc1(fi(m.kokonaispaatosnimi))}`);
+  if (fi(m.viimeisinKasittelyvaihe)) info.push(`viimeisin vaihe: ${lc1(fi(m.viimeisinKasittelyvaihe))}`);
+  if (info.length) out.push(info.join(", ") + ".");
+  const dates = [];
+  if (fi(m.laadintapvm)) dates.push(`Vireille ${fmtDate(fi(m.laadintapvm))}`);
+  if (fi(m.paattymispvm)) dates.push(`käsittely päättyi ${fmtDate(fi(m.paattymispvm))}`);
+  if (dates.length) out.push(dates.join(", ") + ".");
+  out.push(`Lähde: ${matterWebUrl(fi(m.eduskuntatunnus) ?? tunnus)} (Eduskunnan avoin data, CC BY 4.0)`);
+
+  // Keskeiset asiakirjat; yhdistetyt aloitteet näkyvät erikseen (niillä ei ole asiakirjatunnusta).
+  const docs = (fi(m.keskeisetAsiakirjat) ?? []).filter((d) => d.eduskuntatunnus && d.edktunnus);
+  if (docs.length) {
+    out.push("", "Asiakirjat (mietinnön, lausunnon tai vastauksen teksti eduskunnan_asiakirja-työkalulla):");
+    for (const d of docs) {
+      const parts = [d.asiakirjatyyppinimi, d.valiokuntanimi ? lc1(d.valiokuntanimi) : null, d.laadintapvm ? fmtDate(d.laadintapvm) : null].filter(Boolean);
+      const note = d.asiakirjatyyppikoodi === "HE" ? " – teksti hallituksen_esitys-työkalulla" : d.htmlSaatavilla === false ? " – ei tekstiä avoimessa datassa" : "";
+      out.push(`- ${d.eduskuntatunnus}${parts.length ? ` (${parts.join(", ")})` : ""}${note}`);
+    }
+  }
+
+  const bills = [...(fi(m.ehdotukset) ?? [])];
+  if (bills.length) {
+    // Rajapinta järjestää ehdotukset nimen mukaan; numeroiduissa (vanhat asiat) numerojärjestys.
+    const numOf = (e) => {
+      const nm = String(e.nimeke ?? "").match(/^\s*(\d+)\s*[.)]/);
+      return nm ? +nm[1] : null;
+    };
+    if (bills.every((e) => numOf(e) !== null)) bills.sort((a, b2) => numOf(a) - numOf(b2));
+    out.push("", "Lakiehdotukset ja päätökset:");
+    for (const e of bills) {
+      const parts = [];
+      if (e.paatosnimi) parts.push(lc1(e.paatosnimi));
+      if (e.vahvistuspvm) parts.push(`vahvistettu ${fmtDate(e.vahvistuspvm)}`);
+      if (e.saadoskokoelmaviite) parts.push(`säädös ${e.saadoskokoelmaviite}`);
+      if (e.sopimussarjaviite) parts.push(`SopS ${e.sopimussarjaviite}`);
+      out.push(`- ${String(e.nimeke ?? "(nimetön ehdotus)").replace(/\s+/g, " ").trim()}${parts.length ? `: ${parts.join(", ")}` : ""}`);
+    }
+    if (bills.some((e) => e.saadoskokoelmaviite)) out.push("Säädöksen teksti: saados_tiedot tai hae_pykala (vuosi ja numero säädösnumerosta).");
+  }
+
+  const comm = fi(m.valiokuntienViimeisimmatKasittelyt) ?? [];
+  const commLines = comm
+    .filter((k) => k?.valiokunta?.nimi)
+    .map((k) => `- ${k.valiokunta.nimi}: ${k.fraasi?.fraasisisalto ?? k.kasittelyvaihe ?? ""}${k.tapahtumapvm ? ` (${fmtDate(k.tapahtumapvm)})` : ""}`.trimEnd());
+  if (commLines.length) out.push("", "Valiokunnat (viimeisin käsittelyvaihe):", ...commLines);
+
+  const joined = (fi(m.yhdistetytAsiat) ?? []).map((a) => a?.eduskuntatunnus).filter(Boolean);
+  if (joined.length) out.push("", `Yhdistetyt asiat: ${joined.join(", ")}`);
+  const eu = (fi(m.euViittaukset) ?? []).map((a) => a?.eduskuntatunnus).filter(Boolean);
+  if (eu.length) out.push("", `EU-viittaukset: ${eu.join(", ")}`);
+  return clip(out.join("\n"));
+}
+
+// --- Asiakirjan hakemisto ---
+
+async function loadEdkDoc(args) {
+  const tunnus = asTunnus(args.asiakirja, "asiakirja");
+  const meta = await fetchDocMeta(tunnus, DOC_TTL);
+  if (!meta) throw new UserError(`Asiakirjaa ${tunnus} ei löytynyt Eduskunnan avoimesta datasta. Tarkista tunnus; asiakirjat löytyvät myös eduskuntakasittely-työkalulla.`);
+  if (meta.htmlSaatavilla === false) {
+    throw new UserError(`Asiakirjasta ${tunnus} ei ole tekstiä Eduskunnan avoimessa datassa (vanhimmista asiakirjoista on vain PDF). Asiakirja: ${docWebUrl(meta.edktunnus)}`);
+  }
+  const url = docIndexUrl(meta.edktunnus);
+  const s = { url, tunnus, meta, built: null };
+  let base = await getPart(url, "base", DOC_TTL, EDK_INDEX_VERSION);
+  if (!base || base.v !== EDK_INDEX_VERSION) {
+    s.built = await buildEdkDoc(s);
+    base = s.built.base;
+  }
+  s.base = base;
+  return s;
+}
+
+async function buildEdkDoc(s) {
+  const html = await fetchDocHtml(s.meta.edktunnus);
+  if (html === null) throw new UserError(`Asiakirjan ${s.tunnus} tekstiä ei saatu Eduskunnan rajapinnasta. Asiakirja: ${docWebUrl(s.meta.edktunnus)}`);
+  const idx = buildEdkIndex(html, { title: s.meta.nimeketeksti });
+  if (!idx) throw new UserError(`Asiakirjan ${s.tunnus} tekstiä ei voitu tulkita. Asiakirja: ${docWebUrl(s.meta.edktunnus)}`);
+  const parts = { base: idx.base };
+  idx.shards.forEach((p, i) => (parts[`p${i}`] = p));
+  await putParts(s.url, DOC_TTL, parts, EDK_INDEX_VERSION);
+  return idx;
+}
+
+async function edkShard(s, k) {
+  if (s.built) return s.built.shards[k];
+  const v = await getPart(s.url, `p${k}`, DOC_TTL, EDK_INDEX_VERSION);
+  if (v !== undefined) return v;
+  s.built = await buildEdkDoc(s);
+  s.base = s.built.base;
+  return s.built.shards[k];
+}
+
+async function edkParas(s, start, end) {
+  const loaded = new Map();
+  for (const k of edkShardsFor(s.base, start, end)) loaded.set(k, await edkShard(s, k));
+  return (i) => {
+    const k = edkPartOf(s.base.shardStarts, i);
+    return loaded.get(k)[i - s.base.shardStarts[k]];
+  };
+}
+
+function edkHeader(s) {
+  const a = s.meta;
+  // Vanhoissa asiakirjoissa tyypin nimessä on jo valiokunta ("Lakivaliokunnan mietintö").
+  const typeName = a.asiakirjatyyppinimi ?? "";
+  const showCommittee = a.valiokuntanimi && !typeName.toLowerCase().startsWith(a.valiokuntanimi.toLowerCase().slice(0, -3));
+  const lines = [`${a.eduskuntatunnus} ${typeName}${showCommittee ? `, ${lc1(a.valiokuntanimi)}` : ""}`.trim()];
+  const title = a.nimeketeksti || s.base.title;
+  if (title) lines.push(title);
+  const info = [];
+  if (a.laadintapvm) info.push(`Päivätty ${fmtDate(a.laadintapvm)}`);
+  const matter = a.vireilletuloEduskuntatunnus || s.base.matter;
+  if (matter) info.push(`asia ${matter}`);
+  if (info.length) lines.push(info.join(", ") + ".");
+  lines.push(`Lähde: ${docWebUrl(a.edktunnus)} (Eduskunnan avoin data, CC BY 4.0)`);
+  return lines.join("\n");
+}
+
+const lawName = (b, n) => {
+  if (n === null || n === undefined) return null;
+  for (const i of b.laws) {
+    const blk = b.blocks[i];
+    if (blk.num && parseInt(blk.num, 10) === n) return edkBlockLabel(blk);
+  }
+  return `${n}. lakiehdotus`;
+};
+
+function entryLabel(b, r) {
+  const parts = [];
+  if (r.vl) parts.push(`Vastalause ${r.vl}`);
+  const law = r.law !== null && r.law !== undefined ? lawName(b, r.law) : null;
+  if (law) parts.push(law);
+  else {
+    // Numeroimaton laki (esim. eduskunnan vastauksessa): lähin lakiotsikko.
+    for (let j = r.b; j >= 0; j = b.blocks[j].parent) {
+      if (/^(Laki|Lag)\b/.test(b.blocks[j].heading)) {
+        parts.push(edkBlockLabel(b.blocks[j]));
+        break;
+      }
+    }
+  }
+  if (r.ch) parts.push(`${r.ch} luku`);
+  parts.push(r.l);
+  return parts.join(", ");
+}
+
+function lawFilter(b, laki) {
+  if (laki === undefined || laki === null || String(laki).trim() === "") return () => true;
+  const q = String(laki).trim();
+  if (/^\d+$/.test(q)) {
+    const n = +q;
+    // Numeroimattomat lait (eduskunnan vastaus): järjestysnumero lakien luettelossa.
+    const unnumbered = b.laws.filter((i) => !b.blocks[i].num);
+    return (r) => r.law === n || (r.law === null && unnumbered[n - 1] !== undefined && isUnder(b, r.b, unnumbered[n - 1]));
+  }
+  const ql = q.toLowerCase();
+  return (r) => {
+    for (let j = r.b; j >= 0; j = b.blocks[j].parent) if (edkBlockLabel(b.blocks[j]).toLowerCase().includes(ql)) return true;
+    return false;
+  };
+}
+
+function isUnder(b, i, a) {
+  for (let j = i; j >= 0; j = b.blocks[j].parent) if (j === a) return true;
+  return false;
+}
+
+function summarizeEntries(b, list) {
+  // "1. Laki …: 51 a, 51 b §" lakikohtaisesti (vastalauseet erikseen).
+  const groups = new Map();
+  const keys = new Map(); // lohko → lain nimi (sama lohko toistuu)
+  for (const r of list) {
+    const kk = `${r.vl ?? 0}|${r.law}|${r.b}`;
+    let key = keys.get(kk);
+    if (key === undefined) {
+      key = entryLabel(b, { ...r, l: "", ch: null }).replace(/, $/, "");
+      keys.set(kk, key);
+    }
+    if (!groups.has(key)) groups.set(key, []);
+    const lbl = (r.ch ? `${r.ch} luku ` : "") + r.l.replace(/ §$/, "");
+    if (!groups.get(key).includes(lbl)) groups.get(key).push(lbl);
+  }
+  return [...groups].map(([k, v]) => `- ${k || "(laki ei tiedossa)"}: ${v.join(", ")} §`);
+}
+
+async function eduskunnanAsiakirja(args) {
+  const s = await loadEdkDoc(args);
+  const b = s.base;
+  const out = [edkHeader(s), ""];
+  const markNote = b.marks ? "«…» = valiokunnan muutos hallituksen esityksen tekstiin." : "";
+
+  if (args.pykala !== undefined && String(args.pykala).trim() !== "") {
+    const want = parseSection(args.pykala);
+    if (!want) throw new UserError('Anna pykälä numerona, esim. "51" tai "51 a".');
+    const luku = args.luku !== undefined && String(args.luku).trim() !== "" ? String(args.luku).trim().toLowerCase().replace(/\s+/g, " ") : null;
+    const okLaw = lawFilter(b, args.laki);
+    const pick = (list) => list.filter((r) => labelMatches(r.l, want) && (!luku || r.ch === luku) && okLaw(r));
+    const rat = pick(b.rationale);
+    const sec = pick(b.sections);
+    const name = `${want.n}${want.letter ? " " + want.letter : ""} §`;
+    if (!rat.length && !sec.length) {
+      out.push(`Pykälää ${name}${luku ? ` (${luku} luku)` : ""} ei käsitellä asiakirjan pykäläkohtaisissa perusteluissa eikä lakiteksteissä.`);
+      const listed = [...summarizeEntries(b, b.rationale.filter((r) => !r.vl))];
+      if (listed.length) out.push("", "Pykäläkohtaisesti perustellut pykälät:", ...listed);
+      out.push("", "Valiokunta käsittelee usein asiaa myös yleisperusteluissa: kokeile hakusana-parametria.");
+      return clip(out.join("\n"));
+    }
+    const MAX_HITS = 8;
+    const render = async (r) => {
+      const paraAt = await edkParas(s, r.s, r.e);
+      const parts = [];
+      for (let i = r.s; i < r.e; i++) parts.push(paraAt(i).t);
+      return parts.join("\n\n");
+    };
+    if (rat.length) {
+      out.push("VALIOKUNNAN PERUSTELUT");
+      for (const r of rat.slice(0, MAX_HITS)) out.push("", `${entryLabel(b, r)} [${edkBlockPath(b, r.b)}]`, "", await render(r));
+      out.push("");
+    }
+    if (sec.length) {
+      out.push(/^EV\b/.test(s.tunnus) ? "HYVÄKSYTTY LAKITEKSTI" : "LAKITEKSTI (valiokunnan muutosehdotukset; vastalauseen ehdotukset merkitty erikseen)");
+      if (markNote) out.push(markNote);
+      for (const r of sec.slice(0, MAX_HITS)) out.push("", `${entryLabel(b, r)} [${edkBlockPath(b, r.b)}]`, "", await render(r));
+    }
+    if (rat.length + sec.length > 2 * MAX_HITS) out.push("", "Osumia on enemmän: rajaa laki- tai luku-parametrilla.");
+    return clip(out.join("\n").trimEnd());
+  }
+
+  if (args.hakusana !== undefined && String(args.hakusana).trim() !== "") {
+    const q = String(args.hakusana).trim();
+    if (q.length < 3) throw new UserError("Hakusanan pitää olla vähintään 3 merkkiä.");
+    const ql = q.toLowerCase();
+    const MAX = 30;
+    const hits = [];
+    // Osat luetaan yksi kerrallaan, ja haku lopetetaan, kun osumia on tarpeeksi.
+    let shard = null;
+    let shardNo = -1;
+    for (let i = 0; i < b.nParas && hits.length < MAX; i++) {
+      const k = edkPartOf(b.shardStarts, i);
+      if (k !== shardNo) {
+        shard = await edkShard(s, k);
+        shardNo = k;
+      }
+      const p = shard[i - b.shardStarts[k]];
+      const j = p.t.toLowerCase().indexOf(ql);
+      if (j === -1) continue;
+      const start = Math.max(0, j - 120);
+      hits.push({ where: p.b >= 0 ? `${edkBlockPath(b, p.b)} [osa "#${p.b}"]` : "Alku", text: (start > 0 ? "…" : "") + p.t.slice(start, j + q.length + 160) + (j + q.length + 160 < p.t.length ? "…" : "") });
+    }
+    if (!hits.length) out.push(`Hakusanaa "${q}" ei löytynyt asiakirjasta. Kokeile sanan vartaloa.`);
+    else {
+      out.push(`Osumat hakusanalle "${q}" (${hits.length}${hits.length >= MAX ? "+, näytetään 30" : ""}):`);
+      for (const h of hits) out.push("", h.where, `  ${h.text}`);
+      out.push("", 'Hae koko lohko osa-parametrilla, esim. osa: "#12".');
+    }
+    return clip(out.join("\n"));
+  }
+
+  if (args.osa !== undefined && String(args.osa).trim() !== "") {
+    const found = edkFindBlocks(b, args.osa);
+    if (!found.length) throw new UserError(`Lohkoa "${args.osa}" ei löytynyt. Katso sisällys hakemalla asiakirja ilman osa-parametria.`);
+    if (found.length > 1) {
+      out.push(`"${args.osa}" vastaa useaa lohkoa. Valitse tunnisteella:`);
+      for (const i of found.slice(0, 20)) out.push(`- osa "#${i}": ${edkBlockPath(b, i)}`);
+      return out.join("\n");
+    }
+    out.push(edkBlockPath(b, found[0]), "", await renderEdkBlock(s, found[0]));
+    if (markNote) out.push("", markNote);
+    return clip(out.join("\n"));
+  }
+
+  // Yleiskuva.
+  const many = b.blocks.length > 80;
+  out.push(`Sisällys (lohko osa-parametrilla, esim. osa: "#3"; suluissa pituus merkkeinä${many ? "; vain kaksi ylintä tasoa" : ""}):`);
+  b.blocks.forEach((blk, i) => {
+    if (many && blk.depth > 2) return;
+    out.push(`${"  ".repeat(blk.depth - 1)}#${i} ${edkBlockLabel(blk)} (${fmtCount(blk.len)})`);
+  });
+  const d = decisionBlock(b);
+  if (d >= 0) {
+    const text = await renderEdkBlock(s, d, 4000, true);
+    out.push("", `${edkBlockLabel(b.blocks[d]).toUpperCase()}`, "", text);
+  }
+  const rat = summarizeEntries(b, b.rationale.filter((r) => !r.vl));
+  if (rat.length) out.push("", "Pykäläkohtaiset perustelut (teksti pykala-parametrilla):", ...rat);
+  const sec = summarizeEntries(b, b.sections.filter((r) => !r.vl));
+  if (sec.length) out.push("", `${/^EV\b/.test(s.tunnus) ? "Hyväksyttyjen lakien pykälät" : "Lakitekstin pykälät (muutosehdotukset tai uudet lakiehdotukset)"} (pykala-parametrilla):`, ...sec);
+  const vl = [...new Set([...b.rationale, ...b.sections].filter((r) => r.vl).map((r) => r.vl))];
+  if (vl.length) out.push("", `Vastalauseissa (${vl.join(", ")}) on omia pykäläehdotuksia; ne näkyvät pykala-parametrilla.`);
+  return clip(out.join("\n").trimEnd());
+}
+
+// Allekirjoitusosan alku ("Helsingissä 14.9.2022"): päätösosan yleiskuvassa allekirjoittajia ei näytetä.
+const SIGNATURE_RE = /^(Helsingissä|Helsingfors)\s+\d/;
+
+async function renderEdkBlock(s, i, maxChars = Infinity, stopAtSignature = false) {
+  const b = s.base;
+  const blk = b.blocks[i];
+  const paraAt = await edkParas(s, blk.start, blk.end);
+  const body = [];
+  let cursor = blk.start;
+  let n = 0;
+  const push = (t) => {
+    if (stopAtSignature && SIGNATURE_RE.test(t)) {
+      n = Infinity;
+      return;
+    }
+    body.push(t);
+    n += t.length;
+  };
+  for (const d of edkDescendants(b, i)) {
+    for (; cursor < b.blocks[d].start && n < maxChars; cursor++) push(paraAt(cursor).t);
+    if (n >= maxChars) break;
+    push(`${"#".repeat(Math.min(6, b.blocks[d].depth - blk.depth + 1))} ${edkBlockLabel(b.blocks[d])}`);
+  }
+  for (; cursor < blk.end && n < maxChars; cursor++) push(paraAt(cursor).t);
+  if (n >= maxChars && n !== Infinity) body.push(`(katkaistu; koko lohko: osa "#${i}")`);
+  return body.join("\n\n") || "(lohkossa ei ole tekstiä)";
+}
+
+// --- Haku ---
+
+const DOC_TYPES = { mietinto: "Valiokunnan mietintö", lausunto: "Valiokunnan lausunto", vastaus: "Eduskunnan vastaus" };
+
+async function haeEduskunnanAsiakirjoja(args) {
+  const q = String(args.hakusana ?? "").trim();
+  const committee = String(args.valiokunta ?? "").trim();
+  if (!q && !committee && !args.alkaen_vuosi && !args.paattyen_vuosi) throw new UserError("Anna hakusana, valiokunta tai vuosi.");
+  if (args.tyyppi && !DOC_TYPES[args.tyyppi]) throw new UserError("tyyppi: mietinto, lausunto tai vastaus.");
+  const page = Math.max(1, Number(args.sivu) || 1);
+  const types = args.tyyppi ? [DOC_TYPES[args.tyyppi]] : Object.values(DOC_TYPES);
+  const and = [
+    { property: "kielikoodi", stringValue: "fi" },
+    types.length === 1 ? { property: "asiakirjatyyppinimi", stringValue: types[0] } : { or: types.map((t) => ({ property: "asiakirjatyyppinimi", stringValue: t })) },
+  ];
+  if (committee) and.push({ property: "valiokuntanimi", stringValue: committee[0].toUpperCase() + committee.slice(1).toLowerCase() });
+  if (args.alkaen_vuosi || args.paattyen_vuosi) {
+    and.push({
+      property: "laadintapvm",
+      fromDate: args.alkaen_vuosi ? `${asYear(args.alkaen_vuosi)}-01-01` : null,
+      toDate: args.paattyen_vuosi ? `${asYear(args.paattyen_vuosi) + 1}-01-01` : null,
+    });
+  }
+  const req = {
+    category: "asiakirja",
+    maxResults: 10,
+    startFromIndex: (page - 1) * 10,
+    fields: { operation: "exclude", list: ["fullText", "asiasanat"] },
+    sort: [{ property: "laadintapvm", ascending: false }],
+    expression: { and },
+  };
+  if (q) req.query = q;
+  const r = await edkSearch(req, 3600);
+  const total = r.searchMetadata?.totalResultCount ?? 0;
+  const rows = (r.results ?? []).map((x) => x.asiakirja).filter(Boolean);
+  if (!rows.length) return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa tai vartaloa, toista valiokunnan nimeä (esim. \"perustuslakivaliokunta\") tai laajempaa vuosiväliä.";
+  const out = [`Eduskunnan asiakirjat (${total} osumaa, sivu ${page}, uusimmasta vanhimpaan):`];
+  for (const a of rows) {
+    const parts = [a.laadintapvm ? fmtDate(a.laadintapvm) : null, a.vireilletuloEduskuntatunnus ? `asia ${a.vireilletuloEduskuntatunnus}` : null].filter(Boolean);
+    out.push(`${a.eduskuntatunnus ?? a.edktunnus} ${a.asiakirjatyyppinimi ?? ""}${a.valiokuntanimi ? `, ${lc1(a.valiokuntanimi)}` : ""}${parts.length ? ` (${parts.join(", ")})` : ""}`);
+    if (a.nimeketeksti) out.push(`  ${a.nimeketeksti}`);
+  }
+  if (total > page * 10) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  out.push("", "Hae teksti eduskunnan_asiakirja-työkalulla (tunnus) ja käsittelyn vaiheet eduskuntakasittely-työkalulla (asia).");
   return clip(out.join("\n"));
 }
 
@@ -978,6 +1419,9 @@ const HANDLERS = {
   hae_hallituksen_esityksia: haeHallituksenEsityksia,
   hallituksen_esitys: hallituksenEsitys,
   etsi_hallituksen_esityksesta: etsiHallituksenEsityksesta,
+  eduskuntakasittely: eduskuntakasittely,
+  eduskunnan_asiakirja: eduskunnanAsiakirja,
+  hae_eduskunnan_asiakirjoja: haeEduskunnanAsiakirjoja,
 };
 
 export async function callTool(name, args = {}) {
@@ -990,7 +1434,9 @@ export async function callTool(name, args = {}) {
     const msg =
       e instanceof UserError
         ? e.message
-        : e instanceof FinlexError
+        : e instanceof EduskuntaError
+          ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof FinlexError
           ? `Finlex-haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : `Odottamaton virhe: ${e?.message ?? e}`;
     return { isError: true, content: [{ type: "text", text: msg }] };

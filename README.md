@@ -1,6 +1,6 @@
 # finlex-mcp
 
-Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
+Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta sekä lakien eduskuntakäsittelyn (valiokuntien mietinnöt ja lausunnot, eduskunnan vastaukset) Eduskunnan avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
 
 ## Työkalut
 
@@ -13,6 +13,9 @@ Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin,
 | `hae_hallituksen_esityksia` | Hallituksen esitysten haku otsikon osalla ja vuosilla |
 | `hallituksen_esitys` | Esityksen pääasiallinen sisältö ja perustelujen sisällysluettelo; lisäksi yksi perustelujen lohko, pykälän säännöskohtaiset perustelut, lakiehdotuksen tai liitteen teksti |
 | `etsi_hallituksen_esityksesta` | Sanahaku yhden esityksen tekstistä, palauttaa lohkot ja otteet |
+| `eduskuntakasittely` | Asian (esim. HE) käsittely eduskunnassa: tila ja lopputulos, mietintö, lausunnot, eduskunnan vastaus, lakiehdotusten päätökset ja säädösnumerot |
+| `eduskunnan_asiakirja` | Mietinnön, lausunnon tai eduskunnan vastauksen sisällys ja päätösosa; lisäksi pykälän perustelut ja ehdotettu tai hyväksytty sanamuoto, yksi lohko tai sanahaku |
+| `hae_eduskunnan_asiakirjoja` | Mietintöjen, lausuntojen ja eduskunnan vastausten haku tekstin sanalla, valiokunnalla ja vuosilla |
 | `hae_ratkaisuja` | Tietosuojavaltuutetun, eduskunnan oikeusasiamiehen tai oikeuskanslerin ratkaisut otsikolla, asiasanalla tai vuosilla |
 | `hae_ratkaisu` | Yhden ratkaisun tiedot ja koko teksti (PDF-ratkaisuista teksti puretaan) |
 
@@ -36,6 +39,7 @@ Kaikissa tekstityökaluissa:
 - Alkuperäinen: `/akn/fi/act/statute/{vuosi}/{numero}/fin@`
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
 - Hallituksen esitykset: `/akn/fi/doc/government-proposal/{vuosi}/{numero}/fin@` (välimuisti 30 vrk)
+- Eduskunnan asiakirjat: `https://api.eduskunta.fi/api/v1` (Eduskunnan avoin data, OpenAPI-kuvaus `https://api.eduskunta.fi/openapi.json`). Asia ja asiakirjan tunnistus haulla `POST /search` (`stringValue`-ehto tunnukselle), teksti `GET /asiakirjat/edktunnus/{edktunnus}/html`. Rajapinta sallii 180 GET- ja 90 POST-pyyntöä minuutissa IP-osoitetta kohden; vastaukset välimuistitetaan (asia 6 h, asiakirjan hakemisto 7 vrk).
 - Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
 - Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API). Säädös jäsennetään kerran, ja välimuistiin tallennetaan valmis hakemisto osina (perustiedot, hakuteksti, muotoillut pykälät), jotta kutsu pysyy Workersin ilmaistason CPU-rajan (10 ms) alla.
 
@@ -72,9 +76,13 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 - Ratkaisuhaku palauttaa tulokset vanhimmasta uusimpaan; uusimpiin pääsee vuosirajauksella.
 - Ratkaisujen asiasana annetaan Finlexin muodossa, esim. `kameravalvonta`, `terveystiedot` (välilyönnit muutetaan alaviivoiksi).
 - Ajantasainen teksti on Finlexin toimituksellinen kooste, ei virallinen säädösteksti.
+- Eduskunnan asiakirjoista on tekstiä vuodesta 1999 alkaen; vanhemmista on rajapinnassa vain PDF. Vuodesta 2015 asiakirjat ovat Vaski-muodossa, jossa valiokunnan muutokset hallituksen esityksen tekstiin merkitään (`«…»`). Vanhemmista asiakirjoista rakenne tunnistetaan otsikoista.
+- Pykälän perustelut tunnistetaan valiokunnan yksityiskohtaisten perustelujen pykäläotsikoista ("51 a §. Otsikko."). Valiokunta käsittelee osaa pykälistä vain yleisperusteluissa.
+- Asian käsittelytiedoista näytetään valiokuntien viimeisin vaihe, ei jokaista käsittelytapahtumaa: suurimmissa asioissa tapahtumia on satoja (yli 1,5 Mt).
+- Eduskunnan asiakirjahaku vertaa sanoja sellaisinaan, joten taivutusmuoto vaikuttaa osumiin. Haku on hidas (useita sekunteja).
 
 ## Lisenssi
 
 Koodi: MIT, ks. [LICENSE](LICENSE).
 
-Data: Finlexin avoin data, oikeusministeriö, lisenssi [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fi). Tämä ei ole oikeusministeriön tai Finlexin palvelu.
+Data: Finlexin avoin data, oikeusministeriö, ja Eduskunnan avoin data, eduskunta, molemmat lisenssillä [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fi) (lähde on mainittava). Tämä ei ole oikeusministeriön, Finlexin tai eduskunnan palvelu.
