@@ -25,7 +25,9 @@ import {
   pdfText,
 } from "./decisions.js";
 
-const MAX_OUTPUT = 90_000;
+// Claude rajaa työkalun vastauksen 25 000 tokeniin; suomenkielinen teksti
+// vie noin 3 merkkiä/token, joten 50 000 merkkiä jättää varaa.
+const MAX_OUTPUT = 50_000;
 
 const commonProps = {
   vuosi: { type: "integer", description: "Säädöksen vuosi, esim. 1993 (säädösnumerosta 1501/1993)." },
@@ -152,6 +154,26 @@ export const TOOLS = [
     },
   },
 ];
+
+// Työkalujen merkinnät (MCP tool annotations): kaikki työkalut vain lukevat
+// julkista dataa eivätkä muuta mitään.
+const TITLES = {
+  hae_saadoksia: "Hae säädöksiä",
+  saados_tiedot: "Säädöksen tiedot",
+  hae_pykala: "Hae pykälä",
+  etsi_saadoksesta: "Etsi säädöksen tekstistä",
+  hae_ratkaisuja: "Hae viranomaisratkaisuja",
+  hae_ratkaisu: "Hae viranomaisratkaisu",
+};
+for (const t of TOOLS) {
+  t.annotations = {
+    title: TITLES[t.name] ?? t.name,
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: true,
+  };
+}
 
 // ---------- Apufunktiot ----------
 

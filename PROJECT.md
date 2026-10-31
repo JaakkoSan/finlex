@@ -33,3 +33,4 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 
 - 31.10.2026 v1.0: säädöstyökalut.
 - 31.10.2026 v1.1: viranomaisratkaisut (hae_ratkaisuja, hae_ratkaisu).
+- 31.10.2026 v1.2: käyttörajoitus (istunto + IP), työkalumerkinnät (readOnlyHint), vastauksen enimmäispituus 50 000 merkkiä. Tavoitteena haku Clauden connector-hakemistoon.
