@@ -2,6 +2,7 @@
 
 import {
   fetchText,
+  fetchListPage,
   fetchHead,
   cacheGetJson,
   cachePutJson,
@@ -426,6 +427,15 @@ function asNumber(v) {
   return s.replace(/^0+(?=\d)/, "");
 }
 
+// Sivu haetaan kulkemalla edelliset sivut (ks. fetchListPage), joten selaussyvyys rajataan.
+const MAX_LIST_PAGE = 30;
+function asPage(v) {
+  const n = Math.max(1, Number(v) || 1);
+  if (!Number.isInteger(n)) throw new UserError("Anna sivu kokonaislukuna, esim. 2.");
+  if (n > MAX_LIST_PAGE) throw new UserError(`Sivuja voi selata enintään ${MAX_LIST_PAGE}. Rajaa hakua (esim. vuosilla).`);
+  return n;
+}
+
 function asLang(v) {
   return v === "swe" ? "swe" : "fin";
 }
@@ -621,18 +631,16 @@ function clip(text) {
 async function haeSaadoksia(args) {
   const lang = asLang(args.kieli);
   if (!args.otsikko && !args.asiasana) throw new UserError("Anna otsikko tai asiasana.");
-  const page = Math.max(1, Number(args.sivu) || 1);
+  const page = asPage(args.sivu);
   const params = {
     langAndVersion: `${lang}@latest`,
     titleContains: args.otsikko,
     keyword: args.asiasana,
     limit: 10,
-    page,
     sortBy: "number",
   };
   if (args.vain_voimassa !== false) params.isInForce = "true";
-  const raw = await fetchText(listUrl("statute-consolidated", params), { ttl: 3600, accept: "application/json" });
-  const list = raw ? JSON.parse(raw) : [];
+  const list = await fetchListPage(listUrl("statute-consolidated", params), page);
   if (!list.length) {
     return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. \"työaika\" eikä \"työaikalaki 2019\") tai vain_voimassa=false.";
   }
@@ -874,18 +882,16 @@ const blockLabel = (b) => [b.num, b.heading].filter(Boolean).join(" ") || "(otsi
 
 async function haeHallituksenEsityksia(args) {
   if (!args.otsikko && !args.alkaen_vuosi && !args.paattyen_vuosi) throw new UserError("Anna otsikko tai vuosi.");
-  const page = Math.max(1, Number(args.sivu) || 1);
+  const page = asPage(args.sivu);
   const params = {
     langAndVersion: "fin@",
     titleContains: args.otsikko,
     startYear: args.alkaen_vuosi,
     endYear: args.paattyen_vuosi,
     limit: 10,
-    page,
     sortBy: "dateIssued",
   };
-  const raw = await fetchText(docListUrl("government-proposal", params), { ttl: 3600, accept: "application/json" });
-  const list = raw ? JSON.parse(raw) : [];
+  const list = await fetchListPage(docListUrl("government-proposal", params), page);
   if (!list.length) return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. sanan vartaloa \"arvonlisävero\").";
   const items = [];
   const seen = new Set();
@@ -1493,7 +1499,7 @@ async function loadDecision(src, year, number) {
 
 async function haeRatkaisuja(args) {
   const src = asSource(args.lahde);
-  const page = Math.max(1, Number(args.sivu) || 1);
+  const page = asPage(args.sivu);
   let start = args.alkaen_vuosi ? asYear(args.alkaen_vuosi) : undefined;
   let end = args.paattyen_vuosi ? asYear(args.paattyen_vuosi) : undefined;
   let note = "";
@@ -1509,11 +1515,9 @@ async function haeRatkaisuja(args) {
     startYear: start,
     endYear: end,
     limit: 10,
-    page,
     sortBy: "dateIssued",
   };
-  const raw = await fetchText(decisionListUrl(src, params), { ttl: 3600, accept: "application/json" });
-  const list = raw ? JSON.parse(raw) : [];
+  const list = await fetchListPage(decisionListUrl(src, params), page);
   if (!list.length) {
     return page > 1
       ? "Ei enempää tuloksia."
@@ -2206,8 +2210,8 @@ async function tyoehtosopimus(args) {
 }
 
 async function haeViranomaismaarayksia(args) {
-  const page = Number.isInteger(args.sivu) && args.sivu > 0 ? args.sivu : 1;
-  const params = { page };
+  const page = asPage(args.sivu);
+  const params = {};
   if (args.otsikko) params.titleContains = String(args.otsikko).trim();
   if (args.asiasana) params.keyword = keywordValue(args.asiasana);
   if (args.alkaen_vuosi) params.startYear = asYear(args.alkaen_vuosi);
@@ -2215,7 +2219,7 @@ async function haeViranomaismaarayksia(args) {
   if (!params.titleContains && !params.keyword && !params.startYear && !params.endYear) {
     throw new UserError("Anna otsikko, asiasana tai vuosirajaus (määräyksiä on tuhansia).");
   }
-  const { ids, full } = await regList(params);
+  const { ids, full } = await regList(params, page);
   if (!ids.length) return `Viranomaisten määräyksiä ei löytynyt${page > 1 ? " tältä sivulta" : ""}. Kokeile sanan osaa (esim. "omavalvont") tai väljempää rajausta.`;
   const docs = await Promise.all(ids.map((id) => regDoc(id).catch(() => null)));
   const out = [`Viranomaisten määräykset (sivu ${page}, vanhimmasta uusimpaan):`, ""];

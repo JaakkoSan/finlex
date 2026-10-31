@@ -214,6 +214,44 @@ export function proposalWebUrl(year, number) {
   return `https://www.finlex.fi/fi/hallituksen-esitykset/${year}/${number}`;
 }
 
+/** Listaustietueen akn_uri lastSeen-muotoon: "/akn/fi/act/statute-consolidated/1992/912". */
+export function lastSeenOf(uri) {
+  return String(uri ?? "")
+    .replace(/^https?:\/\/[^/]+\/finlex\/avoindata\/v1/, "")
+    .replace(/\/[a-z]{3}@[^/]*$/, "");
+}
+
+/**
+ * Listauksen sivut 1..maxPages. Finlex vaihtaa sivutuksen page-parametrista avainpohjaiseen
+ * lastSeen-parametriin (ilmoitus finlex.fi/fi/avoin-data: "viikolla 47"; arvo on edellisen sivun
+ * viimeisen tietueen akn-URI). Jotta haku toimii kummassakin mallissa, sivut haetaan
+ * järjestyksessä ja jokaisessa pyynnössä annetaan sekä page että edellisen sivun lastSeen.
+ * Palauttaa sivut taulukkona; lopettaa, kun sivu on vajaa tai ei tuo uusia tietueita.
+ */
+export async function walkList(url, maxPages, { ttl = 3600 } = {}) {
+  const pages = [];
+  const seen = new Set();
+  let lastSeen = null;
+  for (let k = 1; k <= maxPages; k++) {
+    const u = `${url}${url.includes("?") ? "&" : "?"}page=${k}${lastSeen ? `&lastSeen=${encodeURIComponent(lastSeen)}` : ""}`;
+    const txt = await fetchText(u, { ttl, accept: "application/json" });
+    const arr = txt ? JSON.parse(txt) : [];
+    // Rajapinta ei tunnistanut sivutusta (palautti saman sivun uudelleen): tuloksia ei enempää.
+    if (!arr.some((x) => !seen.has(x.akn_uri))) break;
+    for (const x of arr) seen.add(x.akn_uri);
+    pages.push(arr);
+    if (arr.length < 10) break;
+    lastSeen = lastSeenOf(arr[arr.length - 1].akn_uri);
+  }
+  return pages;
+}
+
+/** Listauksen sivu (1-pohjainen); edelliset sivut haetaan välimuistista tai rajapinnasta. Tyhjä, kun tuloksia ei ole. */
+export async function fetchListPage(url, page, opts = {}) {
+  const pages = await walkList(url, page, opts);
+  return pages.length === page ? pages[page - 1] : [];
+}
+
 export function docListUrl(docType, params) {
   return listUrl(docType, params).replace("/akn/fi/act/", "/akn/fi/doc/");
 }

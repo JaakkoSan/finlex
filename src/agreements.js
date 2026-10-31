@@ -5,7 +5,7 @@
 // ovat sopijaosapuolet ja sopimusversiot voimassaoloaikoineen; itse sopimukset ovat PDF-liitteitä.
 // Viranomaisten määräykset: aineistotyyppi authority-regulation, teksti PDF:nä (main.pdf).
 
-import { API_BASE, fetchText, fetchBytes, cacheGetJson, cachePutJson } from "./finlex.js";
+import { API_BASE, fetchText, fetchBytes, fetchListPage, walkList, cacheGetJson, cachePutJson } from "./finlex.js";
 import { parseXml, find, findAll, child, childrenNamed, textOf } from "./xml.js";
 
 export const TES_TYPE = "collective-agreement-general-applicability-decision";
@@ -57,29 +57,9 @@ export function parseTes(xml) {
   };
 }
 
-// Finlex vaihtaa sivutuksen page-parametrista lastSeen-parametriin (avainpohjainen sivutus,
-// ilmoitettu finlex.fi/fi/avoin-data: "viikolla 47"). Pyynnössä annetaan molemmat, jolloin
-// sivutus toimii kummassakin mallissa; silmukka päättyy, kun sivu ei tuo uusia tunnisteita.
 async function listAll(base) {
-  const uris = [];
-  const seen = new Set();
-  let lastSeen = null;
-  for (let page = 1; page <= 100; page++) {
-    const q = new URLSearchParams({ format: "json", limit: "10", page: String(page), langAndVersion: "fin@" });
-    if (lastSeen) q.set("lastSeen", lastSeen);
-    const txt = await fetchText(`${base}/list?${q.toString()}`, { ttl: CATALOG_TTL, accept: "application/json" });
-    const arr = txt ? JSON.parse(txt) : [];
-    let added = 0;
-    for (const x of arr) {
-      if (seen.has(x.akn_uri)) continue;
-      seen.add(x.akn_uri);
-      uris.push(x.akn_uri);
-      added++;
-    }
-    if (arr.length < 10 || !added) break;
-    lastSeen = String(arr[arr.length - 1].akn_uri).replace(/^https?:\/\/[^/]+\/finlex\/avoindata\/v1/, "").replace(/\/[a-z]{3}@[^/]*$/, "");
-  }
-  return uris;
+  const pages = await walkList(`${base}/list?format=json&limit=10&langAndVersion=fin@`, 100, { ttl: CATALOG_TTL });
+  return pages.flat().map((x) => x.akn_uri);
 }
 
 async function mapLimit(items, limit, fn) {
@@ -154,9 +134,8 @@ export function regIdOf(uri) {
   return m ? { authority: m[1], y: +m[2], n: m[3] } : null;
 }
 
-export async function regList(params) {
-  const txt = await fetchText(regListUrl(params), { ttl: 6 * 3600, accept: "application/json" });
-  const arr = txt ? JSON.parse(txt) : [];
+export async function regList(params, page = 1) {
+  const arr = await fetchListPage(regListUrl(params), page, { ttl: 6 * 3600 });
   const seen = new Set();
   const out = [];
   for (const x of arr) {
