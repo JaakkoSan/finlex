@@ -30,6 +30,7 @@ import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
 import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch } from "./eduskunta.js";
+import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -262,6 +263,64 @@ export const TOOLS = [
     },
   },
   {
+    name: "hae_tyoehtosopimuksia",
+    description:
+      "Hakee yleissitoviksi vahvistettuja työehtosopimuksia Finlexistä (työehtosopimuksen yleissitovuuden vahvistamislautakunnan päätökset): sopimuksen nimi, työnantaja- ja työntekijäliitot, voimassa oleva sopimuskausi. Ilman hakusanaa listaa kaikki yleissitovat sopimukset. Palauttaa tunnisteen (esim. 2020/19), jolla sopimuksen teksti haetaan tyoehtosopimus-työkalulla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana sopimuksen nimestä tai sopijaliiton nimestä, esim. \"sosiaalipalvelu\", \"terveyspalvelu\", \"kauneus\", \"HALI\" tai \"Palta\". Valinnainen." },
+        kaikki: { type: "boolean", description: "true = myös päätökset, joiden yleissitovuus on päättynyt tai joita ei ole vahvistettu. Oletus: vain yleissitovat." },
+      },
+    },
+  },
+  {
+    name: "tyoehtosopimus",
+    description:
+      "Palauttaa yleissitovan työehtosopimuksen tiedot ja tekstiä Finlexistä: sopijaosapuolet, yleissitovuuspäätös ja soveltamisala, sopimusversiot voimassaoloaikoineen ja sopimuksen sisällysluettelo. Parametrilla pykala yksittäinen pykälä (esim. palkat, työaika, lisät, vuosiloma), hakusanalla osumat ja sivut-parametrilla sivualue. Oletuksena käytetään tänään voimassa olevaa sopimusversiota. Teksti puretaan sopimuksen PDF:stä.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sopimus: { type: "string", description: "Tunniste hae_tyoehtosopimuksia-työkalulta (esim. \"2020/19\") tai sopimuksen nimi (esim. \"yksityisen sosiaalipalvelualan työehtosopimus\")." },
+        versio: { type: "string", description: "Sopimusversio: järjestysnumero luettelosta (\"1\") tai päivämäärä (vvvv-kk-pp), jolloin voimassa ollut versio valitaan. Oletus: tänään voimassa oleva." },
+        pykala: { type: "string", description: "Pykälä, esim. \"5\" tai \"6 a\". Sama numero voi esiintyä sopimuksen eri osissa (työehtosopimus, palkkasopimus, liitteet); kaikki esiintymät palautetaan." },
+        hakusana: { type: "string", description: "Etsittävä merkkijono (kirjainkoolla ei väliä). Valinnainen." },
+        sivut: { type: "string", description: "PDF:n sivualue, esim. \"49\" tai \"49-55\". Valinnainen." },
+      },
+      required: ["sopimus"],
+    },
+  },
+  {
+    name: "hae_viranomaismaarayksia",
+    description:
+      "Hakee viranomaisten määräyksiä Finlexin määräyskokoelmista (esim. Valvira, THL, Fimea, Traficom, Verohallinto, Ruokavirasto, ministeriöt) otsikon sanalla, asiasanalla ja vuosilla. Palauttaa määräyksen numeron, viranomaisen, määräystunnuksen (esim. 1/2024) ja voimaantulon. Järjestys: vanhimmasta uusimpaan, joten rajaa vuosilla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        otsikko: { type: "string", description: "Sana tai sanan osa määräyksen otsikosta, esim. \"omavalvont\" tai \"potilasasiakirj\". Valinnainen." },
+        asiasana: { type: "string", description: "Finlexin asiasana, esim. \"terveydenhuolto\". Valinnainen." },
+        alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
+        paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta." },
+      },
+    },
+  },
+  {
+    name: "viranomaismaarays",
+    description:
+      "Palauttaa viranomaisen määräyksen tiedot ja tekstin Finlexistä: otsikko, viranomainen, määräystunnus, diaarinumero, antopäivä ja voimaantulo, asiasanat sekä teksti (PDF:stä purettuna). Pitkä teksti sivuittain (sivut) tai hakusanalla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maarays: { type: "string", description: "Tunnus hae_viranomaismaarayksia-työkalulta, esim. \"national-supervisory-authority-for-welfare-and-health/2024/50504\". Vanhemmat määräykset myös pelkällä Finlexin numerolla (\"50504\")." },
+        vuosi: { type: "integer", description: "Vuosi, jos määräys annetaan pelkällä numerolla (vuodesta 2025 numerointi alkaa viranomaiskohtaisesti alusta). Valinnainen." },
+        hakusana: { type: "string", description: "Etsittävä merkkijono (kirjainkoolla ei väliä). Valinnainen." },
+        sivut: { type: "string", description: "PDF:n sivualue, esim. \"3\" tai \"3-6\". Valinnainen." },
+      },
+      required: ["maarays"],
+    },
+  },
+  {
     name: "hae_lainvalmisteluhankkeita",
     description:
       "Hakee ministeriöiden lainvalmistelu- ja muita hankkeita valtioneuvoston Hankeikkunasta: hakusana, ministeriö, tila, valmisteluvaihe, hallituksen esitys tai asetus, asettamispäivä. lausuntokierros_auki: true listaa hankkeet, joiden lausuntokierros on nyt käynnissä, määräajan mukaan. Palauttaa hanketunnukset (esim. STM006:00/2020), vaiheen, lausuntokierrokset ja HE-numerot. Lähde: Hankeikkunan avoin rajapinta.",
@@ -336,6 +395,10 @@ const TITLES = {
   hae_lainvalmisteluhankkeita: "Hae lainvalmisteluhankkeita",
   lainvalmisteluhanke: "Lainvalmisteluhanke",
   lainvalmistelun_asiakirja: "Lainvalmistelun asiakirja",
+  hae_tyoehtosopimuksia: "Hae työehtosopimuksia",
+  tyoehtosopimus: "Työehtosopimus",
+  hae_viranomaismaarayksia: "Hae viranomaisten määräyksiä",
+  viranomaismaarays: "Viranomaisen määräys",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -1924,6 +1987,303 @@ async function lainvalmistelunAsiakirja(args) {
   return clip(out.join("\n"));
 }
 
+// ---------- Työehtosopimukset ja viranomaisten määräykset ----------
+
+const PAGE_TEXT_MAX = 40_000;
+
+function lcFold(s) {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/[–—-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tesMatches(c, words) {
+  const hay = lcFold(`${c.title} ${c.employer} ${c.employee}`);
+  return words.every((w) => hay.includes(w));
+}
+
+function currentVersion(c, today) {
+  const vs = c.versions ?? [];
+  const cur = vs.filter((v) => (!v.a || v.a <= today) && (!v.l || v.l >= today)).sort((a, b) => cmpStr(b.a ?? "", a.a ?? ""))[0];
+  return cur ?? null;
+}
+
+function tesStatus(c, today) {
+  if (c.uni === false) return "ei yleissitova (päätöksen mukaan)";
+  const cur = currentVersion(c, today);
+  if (cur) return `yleissitova, voimassa oleva sopimus ${dateRange(cur.a, cur.l)}`;
+  const last = [...(c.versions ?? [])].sort((a, b) => cmpStr(b.a ?? "", a.a ?? ""))[0];
+  if (last?.a && last.a > today) return `yleissitova, seuraava sopimus voimaan ${fmtDate(last.a)}`;
+  if (last) return `yleissitova, viimeisin Finlexissä oleva sopimus ${dateRange(last.a, last.l)} (päättynyt; uudempaa ei ole vielä Finlexissä)`;
+  return "yleissitova";
+}
+
+async function haeTyoehtosopimuksia(args) {
+  const all = await tesCatalog();
+  const today = finnishToday();
+  const q = lcFold(args.hakusana);
+  const words = q ? q.split(" ").filter(Boolean) : [];
+  let rows = all.filter((c) => (args.kaikki === true || c.uni !== false) && (!words.length || tesMatches(c, words)));
+  rows.sort((a, b) => cmpStr(lcFold(a.title), lcFold(b.title)) || b.y - a.y);
+  const head = `Yleissitovat työehtosopimukset Finlexissä${q ? ` (hakusana "${args.hakusana}")` : ""}${args.kaikki ? ", myös päättyneet" : ""}: ${rows.length} kpl.`;
+  if (!rows.length) return `${head}\n\nEi osumia. Kokeile sanan osaa (esim. "sosiaali") tai liiton nimeä, tai kaikki: true.`;
+  const out = [head, ""];
+  const compact = !words.length && rows.length > 40;
+  for (const c of rows) {
+    if (compact) {
+      const cur = currentVersion(c, today);
+      out.push(`${c.y}/${c.n} ${c.title}${c.employer ? ` (${c.employer}${cur ? `; ${dateRange(cur.a, cur.l)}` : ""})` : ""}`);
+    } else {
+      out.push(`${c.y}/${c.n} ${c.title}`);
+      out.push(`  Työnantaja: ${c.employer ?? "?"} | Työntekijät: ${c.employee ?? "?"}`);
+      out.push(`  ${tesStatus(c, today)}`);
+    }
+  }
+  out.push("", "Sopimuksen teksti, pykälät ja soveltamisala: tyoehtosopimus-työkalulla (sopimus: tunniste, esim. \"2020/19\").");
+  out.push("Lähde: Finlex, työehtosopimusten yleissitovuuspäätökset (https://www.finlex.fi/fi/viranomaiset/tyoehtosopimukset), CC BY 4.0.");
+  return clip(out.join("\n"));
+}
+
+async function resolveTes(v) {
+  const s = String(v ?? "").trim();
+  const all = await tesCatalog();
+  const m = s.match(/^(\d{4})\s*\/\s*(\d{1,4})$/) ?? s.match(/^(\d{1,4})\s*\/\s*(\d{4})$/)?.slice(0, 3).reverse();
+  if (m) {
+    const [y, n] = /^\d{4}$/.test(m[1]) ? [+m[1], String(+m[2])] : [+m[2], String(+m[1])];
+    const c = all.find((x) => x.y === y && x.n === n);
+    if (!c) throw new UserError(`Yleissitovuuspäätöstä ${y}/${n} ei löytynyt. Hae tunniste hae_tyoehtosopimuksia-työkalulla.`);
+    return c;
+  }
+  const q = lcFold(s);
+  if (!q) throw new UserError('Anna sopimuksen tunniste (esim. "2020/19") tai nimi.');
+  const exact = all.filter((x) => lcFold(x.title) === q);
+  const cands = exact.length ? exact : all.filter((x) => tesMatches(x, q.split(" ")));
+  const live = cands.filter((x) => x.uni !== false);
+  const pick = live.length ? live : cands;
+  if (pick.length === 1) return pick[0];
+  if (!pick.length) throw new UserError(`Sopimusta "${s}" ei löytynyt. Hae hae_tyoehtosopimuksia-työkalulla.`);
+  throw new UserError(`"${s}" vastaa useaa sopimusta. Valitse tunnisteella:\n${pick.slice(0, 20).map((x) => `- ${x.y}/${x.n} ${x.title}`).join("\n")}`);
+}
+
+function pickVersion(c, v, today) {
+  const vs = c.versions ?? [];
+  if (!vs.length) return null;
+  if (v !== undefined && v !== null && String(v).trim() !== "") {
+    const s = String(v).trim();
+    if (/^\d{1,2}$/.test(s)) {
+      const k = +s;
+      if (k < 1 || k > vs.length) throw new UserError(`Versiota ${k} ei ole. Sopimuksella on ${vs.length} versiota.`);
+      return { v: vs[k - 1], i: k };
+    }
+    const d = asIsoDate(s, "versio");
+    const hit = vs.map((x, i) => ({ v: x, i: i + 1 })).filter(({ v: x }) => (!x.a || x.a <= d) && (!x.l || x.l >= d)).sort((a, b) => cmpStr(b.v.a ?? "", a.v.a ?? ""))[0];
+    if (!hit) throw new UserError(`Päivänä ${fmtDate(d)} voimassa ollutta versiota ei ole Finlexissä.`);
+    return hit;
+  }
+  const cur = currentVersion(c, today);
+  if (cur) return { v: cur, i: vs.indexOf(cur) + 1 };
+  const last = [...vs].sort((a, b) => cmpStr(b.a ?? "", a.a ?? ""))[0];
+  return { v: last, i: vs.indexOf(last) + 1 };
+}
+
+/** Kappaleet otsikosta seuraavaan (iso kirjain -otsikko tai lyhyt otsikkorivi). */
+function paraSection(paras, startRe, max = 6) {
+  const i = paras.findIndex((p) => startRe.test(p));
+  if (i < 0) return [];
+  const out = [];
+  for (let j = i + 1; j < paras.length && out.length < max; j++) {
+    const p = paras[j];
+    if (/^[A-ZÅÄÖ ]{6,}$/.test(p) || (p.length < 70 && !/[.:]$/.test(p) && j > i + 1)) break;
+    out.push(p);
+  }
+  return out;
+}
+
+function textHits(pages, q, max = 30) {
+  const needle = q.toLowerCase();
+  const hits = [];
+  pages.forEach((p, pi) => {
+    const flat = p.replace(/\n+/g, " ");
+    const low = flat.toLowerCase();
+    let last = -1;
+    for (let i = low.indexOf(needle); i >= 0 && hits.length < max; i = low.indexOf(needle, i + needle.length)) {
+      if (i < last) continue;
+      const s = Math.max(0, i - 350);
+      const e = Math.min(flat.length, i + needle.length + 350);
+      last = e;
+      hits.push(`[s. ${pi + 1}] …${flat.slice(s, e)}…`);
+    }
+  });
+  return hits;
+}
+
+function pageRangeText(pages, range) {
+  const [a, b] = range;
+  const parts = [];
+  let len = 0;
+  for (let i = a; i <= b; i++) {
+    const t = pages[i - 1] ?? "";
+    if (len + t.length > PAGE_TEXT_MAX && parts.length) {
+      parts.push(`… (katkaistu; jatka sivusta ${i})`);
+      break;
+    }
+    parts.push(`--- sivu ${i} ---\n${t}`);
+    len += t.length;
+  }
+  return parts.join("\n\n");
+}
+
+async function tyoehtosopimus(args) {
+  const c = await resolveTes(args.sopimus);
+  const today = finnishToday();
+  const doc = await tesDoc(c.y, c.n);
+  const out = [`${c.title} (yleissitovuuspäätös ${c.y}/${c.n})`];
+  out.push(`Työnantaja: ${c.employer ?? "?"}`, `Työntekijät: ${c.employee ?? "?"}`);
+  out.push(`Tila: ${tesStatus(c, today)}.`);
+  out.push(`Lähde: ${tesWebUrl(c.y, c.n)} (Finlex, CC BY 4.0)`);
+
+  const sel = pickVersion(c, args.versio, today);
+  const wantsText = args.pykala || args.hakusana || args.sivut;
+  if (!wantsText) {
+    const paras = doc?.paras ?? [];
+    const head = paras.filter((p) => /^(PÄÄTÖS|Antamispäivä|Asian nro)/i.test(p)).slice(0, 3);
+    if (head.length) out.push("", `Yleissitovuuspäätös: ${head.join(", ").replace(/Antamispäivä\s*/i, "annettu ")}`);
+    const scope = paraSection(paras, /^Sopimuksen soveltamisala$/i, 3);
+    if (scope.length) out.push("", "Soveltamisala (päätöksen mukaan):", ...scope);
+    const ratk = paraSection(paras, /^RATKAISU$/i, 2);
+    if (ratk.length) out.push("", "Ratkaisu:", ...ratk);
+  }
+  if (c.versions?.length) {
+    out.push("", "Sopimusversiot Finlexissä:");
+    c.versions.forEach((v, i) => out.push(`${i + 1}. ${v.t}, ${dateRange(v.a, v.l) || "voimassaolo ei tiedossa"}${sel && sel.i === i + 1 ? " ← tässä käytetty" : ""}`));
+  }
+  if (!sel?.v?.f) {
+    out.push("", "Päätökseen ei ole liitetty sopimustekstiä Finlexissä.");
+    return clip(out.join("\n"));
+  }
+  const url = tesFileUrl(c.y, c.n, sel.v.f);
+  out.push(`Sopimusteksti (PDF): ${url}`);
+  const pdf = await pdfPages(url);
+  if (!pdf?.pages?.length) {
+    out.push("", "PDF:stä ei saatu tekstiä. Avaa sopimus linkistä.");
+    return clip(out.join("\n"));
+  }
+  const pages = pdf.pages;
+  out.push(`Teksti: ${pages.length} sivua, purettu PDF:stä automaattisesti (taulukot ja rivitys voivat poiketa alkuperäisestä; tarkista luvut PDF:stä).`);
+
+  if (args.pykala) {
+    const hits = findSections(pages, args.pykala);
+    if (!hits.length) {
+      out.push("", `Pykälää ${args.pykala} ei tunnistettu sopimustekstistä. Kokeile hakusanaa tai sisällysluetteloa (ilman lisäparametreja).`);
+      return clip(out.join("\n"));
+    }
+    if (hits.length > 1) out.push("", `Pykälä ${args.pykala} esiintyy ${hits.length} kertaa (eri osissa, esim. työehtosopimus, palkkasopimus, liitteet).`);
+    for (const h of hits) out.push("", `[PDF:n sivu ${h.page}${h.header ? `, ${h.header}` : ""}]`, h.text);
+    return clip(out.join("\n"));
+  }
+  if (args.hakusana) {
+    const hits = textHits(pages, String(args.hakusana));
+    out.push("", hits.length ? `Osumat hakusanalle "${args.hakusana}" (${hits.length}${hits.length >= 30 ? "+" : ""}):` : `Hakusanaa "${args.hakusana}" ei löytynyt. Kokeile sanan vartaloa.`);
+    for (const h of hits) out.push("", h);
+    return clip(out.join("\n"));
+  }
+  if (args.sivut) {
+    const range = parsePages(args.sivut, pages.length);
+    if (!range) throw new UserError(`Anna sivut muodossa "12" tai "12-15" (sivuja ${pages.length}).`);
+    out.push("", pageRangeText(pages, range));
+    return clip(out.join("\n"));
+  }
+  const toc = tocLines(pages);
+  if (toc.length) {
+    out.push("", "Sisällysluettelo (sivunumerot ovat sopimuksen omia; PDF:n sivu voi poiketa):", ...toc.slice(0, 250));
+  } else {
+    out.push("", "Sopimuksen alku:", pages.slice(0, 3).join("\n\n").slice(0, 4000));
+  }
+  out.push("", "Pykälä: pykala-parametrilla (esim. \"5\"); sanahaku: hakusana; sivualue: sivut (esim. \"49-55\").");
+  return clip(out.join("\n"));
+}
+
+async function haeViranomaismaarayksia(args) {
+  const page = Number.isInteger(args.sivu) && args.sivu > 0 ? args.sivu : 1;
+  const params = { page };
+  if (args.otsikko) params.titleContains = String(args.otsikko).trim();
+  if (args.asiasana) params.keyword = keywordValue(args.asiasana);
+  if (args.alkaen_vuosi) params.startYear = asYear(args.alkaen_vuosi);
+  if (args.paattyen_vuosi) params.endYear = asYear(args.paattyen_vuosi);
+  if (!params.titleContains && !params.keyword && !params.startYear && !params.endYear) {
+    throw new UserError("Anna otsikko, asiasana tai vuosirajaus (määräyksiä on tuhansia).");
+  }
+  const { ids, full } = await regList(params);
+  if (!ids.length) return `Viranomaisten määräyksiä ei löytynyt${page > 1 ? " tältä sivulta" : ""}. Kokeile sanan osaa (esim. "omavalvont") tai väljempää rajausta.`;
+  const docs = await Promise.all(ids.map((id) => regDoc(id).catch(() => null)));
+  const out = [`Viranomaisten määräykset (sivu ${page}, vanhimmasta uusimpaan):`, ""];
+  ids.forEach((id, i) => {
+    const d = docs[i];
+    const bits = [d?.authority, d?.number ? `${d.type ?? "määräys"} ${d.number}`.toLowerCase().replace(/^./, (x) => x.toUpperCase()) : null, d?.entry ? `voimaan ${fmtDate(d.entry)}` : null].filter(Boolean);
+    out.push(`${d?.title ?? "(otsikko ei saatavilla)"}${bits.length ? `\n  ${bits.join(" | ")}` : ""}\n  tunnus: ${id.authority}/${id.y}/${id.n}`);
+  });
+  if (full) out.push("", `Lisää tuloksia voi olla: sivu ${page + 1}, tai rajaa vuosilla.`);
+  out.push("", "Määräyksen teksti: viranomaismaarays-työkalulla (maarays: tunnus). Lähde: Finlex, viranomaisten määräyskokoelmat, CC BY 4.0.");
+  return clip(out.join("\n"));
+}
+
+async function viranomaismaarays(args) {
+  const raw = String(args.maarays ?? args.numero ?? "").trim();
+  let id = null;
+  const full = raw.match(/^([a-z0-9-]+)\/(\d{4})\/(\d{1,7})$/);
+  if (full) id = { authority: full[1], y: +full[2], n: full[3] };
+  else if (/^\d{1,7}$/.test(raw)) {
+    const y = args.vuosi ? asYear(args.vuosi) : null;
+    const { ids } = await regList({ documentNumber: raw, ...(y ? { startYear: y, endYear: y } : {}) });
+    if (!ids.length) throw new UserError(`Määräystä numerolla ${raw}${y ? ` (${y})` : ""} ei löytynyt Finlexistä.`);
+    if (ids.length > 1) {
+      throw new UserError(`Numerolla ${raw} löytyi useita määräyksiä (vuodesta 2025 numerointi on viranomaiskohtainen). Valitse tunnuksella:\n${ids.map((x) => `- ${x.authority}/${x.y}/${x.n}`).join("\n")}`);
+    }
+    id = ids[0];
+  } else {
+    throw new UserError('Anna määräyksen tunnus hae_viranomaismaarayksia-työkalulta, esim. "national-supervisory-authority-for-welfare-and-health/2024/50504".');
+  }
+  const n = `${id.authority}/${id.y}/${id.n}`;
+  const d = await regDoc(id);
+  if (!d) throw new UserError(`Määräyksen ${n} tietoja ei saatu Finlexistä.`);
+  const base = regUrl(id.authority, id.y, id.n);
+  const out = [d.title ?? "(otsikoton määräys)"];
+  if (d.authority) out.push(`Viranomainen: ${d.authority}`);
+  if (d.number) out.push(`${d.type ?? "Määräys"}: ${d.number}`);
+  if (d.diary) out.push(`Diaarinumero: ${d.diary}`);
+  if (d.issued) out.push(`Annettu: ${fmtDate(d.issued)}`);
+  if (d.entry) out.push(`Voimaantulo: ${fmtDate(d.entry)}`);
+  if (d.endDate) out.push(`Voimassa: ${fmtDate(d.endDate)} asti`);
+  if (d.keywords.length) out.push(`Asiasanat: ${d.keywords.join(", ")}`);
+  const pdfUrl = d.pdfs.length ? `${base}/${d.pdfs[0].replace(/^\.?\//, "")}` : null;
+  out.push(`Lähde: ${pdfUrl ?? base} (Finlex, viranomaisten määräyskokoelmat, CC BY 4.0)`);
+  out.push("Voimassaolo: Finlexin metatiedoissa ei aina ole kumoamistietoa; tarkista ajantasaisuus viranomaiselta.");
+  if (!pdfUrl) {
+    if (d.bodyText.length) out.push("", d.bodyText.join("\n\n"));
+    else out.push("", "(Määräykselle ei ole tekstiä Finlexin avoimessa datassa.)");
+    return clip(out.join("\n"));
+  }
+  const pdf = await pdfPages(pdfUrl);
+  if (!pdf?.pages?.length) {
+    out.push("", "PDF:stä ei saatu tekstiä. Avaa määräys linkistä.");
+    return clip(out.join("\n"));
+  }
+  const pages = pdf.pages;
+  out.push(`Teksti: ${pages.length} sivua, purettu PDF:stä automaattisesti.`);
+  if (args.hakusana) {
+    const hits = textHits(pages, String(args.hakusana));
+    out.push("", hits.length ? `Osumat hakusanalle "${args.hakusana}" (${hits.length}${hits.length >= 30 ? "+" : ""}):` : `Hakusanaa "${args.hakusana}" ei löytynyt. Kokeile sanan vartaloa.`);
+    for (const h of hits) out.push("", h);
+    return clip(out.join("\n"));
+  }
+  const range = args.sivut ? parsePages(args.sivut, pages.length) : [1, pages.length];
+  if (!range) throw new UserError(`Anna sivut muodossa "3" tai "3-6" (sivuja ${pages.length}).`);
+  out.push("", pageRangeText(pages, range));
+  return clip(out.join("\n"));
+}
+
 const HANDLERS = {
   hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
@@ -1940,6 +2300,10 @@ const HANDLERS = {
   hae_lainvalmisteluhankkeita: haeLainvalmisteluhankkeita,
   lainvalmisteluhanke: lainvalmisteluhanke,
   lainvalmistelun_asiakirja: lainvalmistelunAsiakirja,
+  hae_tyoehtosopimuksia: haeTyoehtosopimuksia,
+  tyoehtosopimus: tyoehtosopimus,
+  hae_viranomaismaarayksia: haeViranomaismaarayksia,
+  viranomaismaarays: viranomaismaarays,
 };
 
 export async function callTool(name, args = {}) {

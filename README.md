@@ -1,6 +1,6 @@
 # finlex-mcp
 
-Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta, lakien valmistelun ministeriöissä (hankkeet, lausuntokierrokset, lausunnot) valtioneuvoston Hankeikkunasta sekä lakien eduskuntakäsittelyn (valiokuntien mietinnöt ja lausunnot, eduskunnan vastaukset) Eduskunnan avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
+Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset, yleissitovat työehtosopimukset, viranomaisten määräykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta, lakien valmistelun ministeriöissä (hankkeet, lausuntokierrokset, lausunnot) valtioneuvoston Hankeikkunasta sekä lakien eduskuntakäsittelyn (valiokuntien mietinnöt ja lausunnot, eduskunnan vastaukset) Eduskunnan avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
 
 ## Työkalut
 
@@ -13,6 +13,10 @@ Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin,
 | `hae_hallituksen_esityksia` | Hallituksen esitysten haku otsikon osalla ja vuosilla |
 | `hallituksen_esitys` | Esityksen pääasiallinen sisältö ja perustelujen sisällysluettelo; lisäksi yksi perustelujen lohko, pykälän säännöskohtaiset perustelut, lakiehdotuksen tai liitteen teksti |
 | `etsi_hallituksen_esityksesta` | Sanahaku yhden esityksen tekstistä, palauttaa lohkot ja otteet |
+| `hae_tyoehtosopimuksia` | Yleissitovat työehtosopimukset nimellä tai sopijaliitolla: sopijaosapuolet ja voimassa oleva sopimuskausi |
+| `tyoehtosopimus` | Yleissitovuuspäätös ja soveltamisala, sopimusversiot ja sisällysluettelo; lisäksi pykälä, sanahaku tai sivualue sopimuksen PDF:stä |
+| `hae_viranomaismaarayksia` | Viranomaisten määräykset otsikon sanalla, asiasanalla ja vuosilla |
+| `viranomaismaarays` | Määräyksen tiedot (viranomainen, tunnus, voimaantulo) ja teksti PDF:stä sivuittain tai sanahaulla |
 | `hae_lainvalmisteluhankkeita` | Ministeriöiden lainvalmistelu- ja muiden hankkeiden haku hakusanalla, ministeriöllä, tilalla, vaiheella ja asettamispäivällä; käynnissä olevat lausuntokierrokset määräajan mukaan |
 | `lainvalmisteluhanke` | Hankkeen tila ja valmisteluvaihe, tiivistelmä, HE-tiedot (HE-luettelo, vastuuministeri, säädösnumerot), vaiheet ja lausuntokierrokset, linkit lausuntopalveluun ja numeroitu asiakirjaluettelo (lausunnot laatijoittain); myös HE-numerolla |
 | `lainvalmistelun_asiakirja` | Hankkeen asiakirjan teksti (PDF tai Word) osina tai hakusanan osumat |
@@ -43,6 +47,9 @@ Kaikissa tekstityökaluissa:
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
 - Hallituksen esitykset: `/akn/fi/doc/government-proposal/{vuosi}/{numero}/fin@` (välimuisti 30 vrk)
 - Eduskunnan asiakirjat: `https://api.eduskunta.fi/api/v1` (Eduskunnan avoin data, OpenAPI-kuvaus `https://api.eduskunta.fi/openapi.json`). Asia ja asiakirjan tunnistus haulla `POST /search` (`stringValue`-ehto tunnukselle), teksti `GET /asiakirjat/edktunnus/{edktunnus}/html`. Rajapinta sallii 180 GET- ja 90 POST-pyyntöä minuutissa IP-osoitetta kohden; vastaukset välimuistitetaan (asia 6 h, asiakirjan hakemisto 7 vrk).
+- Työehtosopimukset: `/akn/fi/doc/collective-agreement-general-applicability-decision/{vuosi}/{numero}/fin@` (yleissitovuuspäätös, metatiedoissa sopimusversiot) ja sopimus PDF:nä `…/fin@/collectiveAgreement/{tiedosto}.pdf`. Kaikkien päätösten luettelo (n. 210) muodostetaan listauksesta ja päätösten metatiedoista ja pidetään välimuistissa vuorokauden; ensimmäinen haku kestää useita sekunteja.
+- Viranomaisten määräykset: `/akn/fi/doc/authority-regulation/{viranomainen}/{vuosi}/{numero}/fin@`, teksti `…/main.pdf`. Tunnisteessa on viranomainen, koska vuodesta 2025 numerointi on viranomaiskohtainen.
+- PDF-tekstit puretaan sivuittain (unpdf) ja tallennetaan välimuistiin 30 vuorokaudeksi.
 - Lainvalmistelu: `https://api.hankeikkuna.fi/api/v2` (valtioneuvoston Hankeikkunan julkinen rajapinta, CC BY 4.0, kuvaus `https://api.hankeikkuna.fi/api/api-docs`). Haku `POST /kohteet/haku`, ministeriöt `GET /asettajat`, asiakirjat `https://api.hankeikkuna.fi/asiakirjat/…`. Hakuvastaukset ovat suuria (hanke asiakirjaluetteloineen 30–400 kt), joten välimuistiin tallennetaan vain tiivistetyt tiedot (1 h) ja asiakirjojen purettu teksti (30 vrk). Hankesivun linkki `https://valtioneuvosto.fi/hanke?tunnus=…`.
 - Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
 - Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API). Säädös jäsennetään kerran, ja välimuistiin tallennetaan valmis hakemisto osina (perustiedot, hakuteksti, muotoillut pykälät), jotta kutsu pysyy Workersin ilmaistason CPU-rajan (10 ms) alla.
@@ -83,6 +90,10 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 - Eduskunnan asiakirjoista on tekstiä vuodesta 1999 alkaen; vanhemmista on rajapinnassa vain PDF. Vuodesta 2015 asiakirjat ovat Vaski-muodossa, jossa valiokunnan muutokset hallituksen esityksen tekstiin merkitään (`«…»`). Vanhemmista asiakirjoista rakenne tunnistetaan otsikoista.
 - Pykälän perustelut tunnistetaan valiokunnan yksityiskohtaisten perustelujen pykäläotsikoista ("51 a §. Otsikko."). Valiokunta käsittelee osaa pykälistä vain yleisperusteluissa.
 - Asian käsittelyn vaiheista näytetään oletuksena päävaiheet (vireilletulo, lähetekeskustelu, valiokuntien ratkaisut ja vastalauseet, mietintö ja lausunnot, täysistuntokäsittelyt, eduskunnan vastaus). Valiokuntien kokouskohtaiset vaiheet saa parametrilla `kaikki_vaiheet`; suurimmissa asioissa niitä on satoja.
+- Työehtosopimusten teksti puretaan PDF:stä, joten palkkataulukot ja rivitys voivat poiketa alkuperäisestä. Pykälät tunnistetaan otsikkoriveistä (`5 § Palkat` tai `§ 5`); sama numero esiintyy usein sopimuksen eri osissa (työehtosopimus, palkkasopimus, liitteet), ja kaikki esiintymät palautetaan.
+- Finlexissä on vain yleissitoviksi vahvistetut työehtosopimukset. Uusi sopimuskausi tulee Finlexiin vasta yleissitovuuspäätöksen jälkeen, joten voimassa olevaa sopimusta ei aina vielä ole; työkalu kertoo, jos viimeisin Finlexissä oleva sopimus on päättynyt.
+- Viranomaisten määräysten haku palauttaa tulokset vanhimmasta uusimpaan, ja Finlexin metatiedoissa ei aina ole kumoamistietoa. Viranomaisrajausta ei ole, koska rajapinnan authority-ehto ei palauttanut tuloksia; viranomaisen nimi on yleensä otsikossa tai asiasanoissa.
+- Finlex on ilmoittanut vaihtavansa listausten sivutuksen page-parametrista lastSeen-parametriin (finlex.fi/fi/avoin-data, "viikolla 47"). Työehtosopimusluettelo antaa molemmat parametrit; muiden hakujen sivutus on päivitettävä muutoksen jälkeen.
 - Hankeikkunan asiakirjat numeroidaan luontiajan mukaan. Numero voi muuttua, jos hankkeeseen lisätään vanhempia asiakirjoja jälkikäteen, joten numero haetaan aina samasta luettelosta.
 - Hankeikkunan valmisteluvaihe ja vaiheiden tila ovat ministeriön kirjaamia, eivätkä ne ole aina ajan tasalla. Lausuntokierroksen tila (käynnissä, päättynyt, tulossa) lasketaan päivämääristä.
 - Asiakirjoista puretaan PDF ja Word (.docx). Vanhat Word- (.doc) ja RTF-tiedostot sekä skannatut PDF:t ilman tekstikerrosta näytetään vain linkkinä. Osasta asiakirjoja on julkaistu vain viitetiedot.

@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 15, "tools/list (15 työkalua)");
+check(list.result?.tools?.length === 19, "tools/list (19 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -67,6 +67,14 @@ const cases = [
   ["lainvalmisteluhanke", { hanke: "HE 304/2010" }, (t) => t.includes("STM118:00/2010") && t.includes("EV 262/2010")],
   ["lainvalmistelun_asiakirja", { hanke: "STM006:00/2020", asiakirja: 198 }, (t) => t.includes("Lausuntoyhteenveto") && t.includes("120 lausuntoa")],
   ["lainvalmistelun_asiakirja", { hanke: "STM006:00/2020", asiakirja: 89, hakusana: "mitoitus" }, (t) => t.includes("Osumat") && t.includes("henkilöstömitoitus")],
+  ["hae_tyoehtosopimuksia", { hakusana: "sosiaalipalvelu" }, (t) => t.includes("2020/19") && t.includes("Hyvinvointiala HALI ry")],
+  ["hae_tyoehtosopimuksia", {}, (t) => t.includes("Kaupan työehtosopimus") && t.includes("Yleissitovat työehtosopimukset")],
+  ["tyoehtosopimus", { sopimus: "2020/19" }, (t) => t.includes("Soveltamisala") && t.includes("Sisällysluettelo") && t.includes("14 § Ilta- ja yötyö")],
+  ["tyoehtosopimus", { sopimus: "2020/19", pykala: "14" }, (t) => t.includes("iltatyölisänä") && t.includes("PDF:n sivu")],
+  ["tyoehtosopimus", { sopimus: "2020/19", versio: "2024-01-01", hakusana: "koeaika" }, (t) => t.includes("Yksosala2305.pdf") && t.includes("Osumat")],
+  ["hae_viranomaismaarayksia", { otsikko: "omavalvont", alkaen_vuosi: 2024 }, (t) => t.includes("national-supervisory-authority-for-welfare-and-health/2024/50504")],
+  ["viranomaismaarays", { maarays: "national-supervisory-authority-for-welfare-and-health/2024/50504", sivut: "1" }, (t) => t.includes("Määräys: 1/2024") && t.includes("Valtuutussäännös")],
+  ["viranomaismaarays", { maarays: "1", vuosi: 2026 }, (t) => t.includes("useita määräyksiä")],
   ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (t) => t.includes("numero") && t.includes("Tietosuojavaltuutettu")],
   ["hae_ratkaisuja", { lahde: "oikeusasiamies", otsikko: "kotihoito" }, (t) => t.includes("numero")],
   ["hae_ratkaisu", { lahde: "tietosuojavaltuutettu", vuosi: 2025, numero: "2443" }, (t) => t.includes("TSV/61/2021") && t.includes("Asia")],
