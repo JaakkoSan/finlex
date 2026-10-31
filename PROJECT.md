@@ -19,6 +19,7 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/index.js`: MCP-protokolla (initialize, tools/list, tools/call)
 - `src/tools.js`: työkalujen määrittelyt ja toteutus
 - `src/statute.js`: Akoma Ntoso -dokumentin tulkinta ja tekstiksi muotoilu
+- `src/statuteIndex.js`: säädöksen hakemisto välimuistia varten (pykälät, hakuteksti, luvut)
 - `src/finlex.js`: Finlex-rajapinnan asiakas ja välimuisti
 - `src/decisions.js`: viranomaisratkaisut (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) ja PDF-tekstin purku
 - `src/xml.js`: pieni XML-jäsennin
@@ -35,3 +36,4 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - 31.10.2026 v1.1: viranomaisratkaisut (hae_ratkaisuja, hae_ratkaisu).
 - 31.10.2026 v1.2: käyttörajoitus (istunto + IP), työkalumerkinnät (readOnlyHint), vastauksen enimmäispituus 50 000 merkkiä. Tavoitteena haku Clauden connector-hakemistoon.
 - 31.10.2026: MIT-lisenssi, repo valmisteltu julkiseksi.
+- 31.10.2026 v1.3: välimuistiin valmiiksi jäsennetty hakemisto raa'an XML:n sijaan (CPU-aika välimuistista n. 2–10 ms, ennen 20–90 ms). Tulevien muutosten merkinnät lisätään vasta pyynnön hetkellä.

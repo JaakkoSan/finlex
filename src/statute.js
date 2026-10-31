@@ -81,7 +81,7 @@ export function metadata(doc) {
 
 // ---------- Rakenne ----------
 
-function provisionsRoot(act) {
+export function provisionsRoot(act) {
   const body = child(act, "body");
   if (!body) return null;
   const wrapper = findAll(body, "hcontainer").find((h) => h.attrs.name === "statuteProvisionsWrapper");
@@ -97,23 +97,14 @@ export function normNum(s) {
     .trim();
 }
 
-function numOf(node) {
+export function numOf(node) {
   const n = child(node, "num");
   return n ? textOf(n) : "";
 }
 
-function headingOf(node) {
+export function headingOf(node) {
   const h = child(node, "heading");
   return h ? textOf(h) : "";
-}
-
-function ancestor(node, names) {
-  let p = node.parent;
-  while (p) {
-    if (names.has(p.name)) return p;
-    p = p.parent;
-  }
-  return null;
 }
 
 /** Sisällysluettelo: osat, luvut ja pykälät otsikoineen. */
@@ -170,24 +161,43 @@ export function tableOfContents(doc, maxChars = 30000) {
 
 // ---------- Tekstin muotoilu ----------
 
-// Muutossäädökset, jotka tulevat voimaan myöhemmin: "597/2026" -> "2027-01-01".
-// Asetetaan synkronisesti juuri ennen muotoilua (ei await-välejä), joten
-// samanaikaiset pyynnöt eivät sekoitu.
-let FUTURE = new Map();
-export function setFutureAmendments(map) {
-  FUTURE = map ?? new Map();
-}
+// Aikaan sidotut merkinnät jätetään muotoiluun merkeiksi, jotta muotoiltu teksti
+// voidaan tallentaa välimuistiin. finalize() korvaa merkit pyynnön hetkellä.
+// Ohjausmerkit (U+0001, U+0002) eivät ole sallittuja XML 1.0 -tekstissä, joten
+// ne eivät voi esiintyä säädöstekstissä.
+const MARK_FUT = "\u0001";
+const MARK_WARN = "\u0002";
 
 function versionLabel(el) {
   const l = el.attrs["finlex:originalVersionLabel"];
   if (!l) return "";
   let extra = "";
   const lm = l.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})\/(\d+)/);
-  if (lm) {
-    const d = FUTURE.get(`${lm[4]}/${lm[3]}`);
-    if (d) extra = `, EI VIELÄ VOIMASSA, voimaan ${d}`;
-  }
+  if (lm) extra = `${MARK_FUT}${lm[4]}/${lm[3]}${MARK_FUT}`;
   return ` [sanamuoto: ${l}${extra}]`;
+}
+
+const FUT_RE = /\u0001([^\u0001]*)\u0001/g;
+const WARN_RE = /\n( *)\u0002(\d+)\|(\d+)\|(\d+)\u0002/g;
+
+/**
+ * Korvaa muotoillun tekstin aikamerkit.
+ * future: Map muutossäädös ("597/2026") -> voimaantulopäivä tekstinä.
+ */
+export function finalize(text, future = new Map(), today = new Date()) {
+  if (text.indexOf(MARK_FUT) !== -1) {
+    text = text.replace(FUT_RE, (_, id) => {
+      const d = future.get(id);
+      return d ? `, EI VIELÄ VOIMASSA, voimaan ${d}` : "";
+    });
+  }
+  if (text.indexOf(MARK_WARN) !== -1) {
+    text = text.replace(WARN_RE, (_, pad, d, m, y) => {
+      const w = futureWarning(`tulee voimaan ${d}.${m}.${y}`, today);
+      return w ? `\n${pad}${w}` : "";
+    });
+  }
+  return text;
 }
 
 function paragraphsText(node) {
@@ -278,8 +288,8 @@ export function render(node, depth = 0, ctx = { mom: 0 }) {
   if (name === "hcontainer") {
     if (node.attrs.name === "noteAuthorial") {
       const t = textOf(node);
-      const warn = futureWarning(t);
-      return [`${pad}Huomautus (Finlex): ${t}`, ...(warn ? [`${pad}${warn}`] : [])];
+      const m = futureDate(t);
+      return [`${pad}Huomautus (Finlex): ${t}`, ...(m ? [`${pad}${MARK_WARN}${m[1]}|${m[2]}|${m[3]}${MARK_WARN}`] : [])];
     }
     const label = [numOf(node), headingOf(node)].filter(Boolean).join(" ");
     if (label) lines.push(pad + label);
@@ -334,9 +344,14 @@ function renderSubsection(node, mom, depth) {
   return out;
 }
 
+/** Huomautuksen tuleva voimaantulopäivä (vastaavuus d, m, v) tai null. */
+function futureDate(text) {
+  return text.match(/tulee voimaan (\d{1,2})\.(\d{1,2})\.(\d{4})/) || text.match(/träder i kraft (?:den )?(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+}
+
 /** Jos huomautus kertoo tulevasta voimaantulosta, palauttaa varoituksen. */
 export function futureWarning(text, today = new Date()) {
-  const m = text.match(/tulee voimaan (\d{1,2})\.(\d{1,2})\.(\d{4})/) || text.match(/träder i kraft (?:den )?(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  const m = futureDate(text);
   if (!m) return null;
   const d = new Date(Date.UTC(+m[3], +m[2] - 1, +m[1]));
   if (d > today) {
@@ -345,57 +360,10 @@ export function futureWarning(text, today = new Date()) {
   return null;
 }
 
-// ---------- Pykälien haku ----------
+// ---------- Pykäläryhmän muotoilu ----------
 
-/**
- * Etsii pykälät. Palauttaa ryhmät: kukin ryhmä on peräkkäinen jakso,
- * jossa sama pykälä ja sen huomautukset/aiemmat sanamuodot ovat.
- */
-export function findSections(doc, pykala, luku) {
-  const rootEl = provisionsRoot(doc.act);
-  if (!rootEl) return [];
-  const wantS = normNum(pykala);
-  const wantC = luku != null && luku !== "" ? normNum(luku) : null;
-  const all = findAll(rootEl, "section", [], true);
-  const groups = [];
-  const used = new Set();
-  for (const sec of all) {
-    if (used.has(sec)) continue;
-    if (normNum(numOf(sec)) !== wantS) continue;
-    const chap = ancestor(sec, new Set(["chapter"]));
-    if (wantC !== null && (!chap || normNum(numOf(chap)) !== wantC)) continue;
-    // Kerää peräkkäiset sisarukset: sama pykälä tai huomautus.
-    const sibs = elements(sec.parent);
-    let idx = sibs.indexOf(sec);
-    const run = [sec];
-    used.add(sec);
-    for (let j = idx + 1; j < sibs.length; j++) {
-      const s = sibs[j];
-      if (s.name === "hcontainer" && s.attrs.name === "noteAuthorial") run.push(s);
-      else if (s.name === "section" && normNum(numOf(s)) === wantS) {
-        run.push(s);
-        used.add(s);
-      } else break;
-    }
-    // Poista lopusta huomautukset, jotka eivät liity (seuraavaan pykälään).
-    while (run.length > 1 && run[run.length - 1].name === "hcontainer") {
-      const t = textOf(run[run.length - 1]);
-      if (new RegExp(`\\b${escapeRe(numOf(sec).replace(/\s*§/, ""))}\\s*§`).test(t)) break;
-      run.pop();
-    }
-    groups.push({ chapter: chap, nodes: run });
-  }
-  return groups;
-}
-
-export function findChapter(doc, luku) {
-  const rootEl = provisionsRoot(doc.act);
-  if (!rootEl) return null;
-  const want = normNum(luku);
-  return findAll(rootEl, "chapter").find((c) => normNum(numOf(c)) === want) ?? null;
-}
-
-export function renderGroup(group) {
+/** pre: valinnainen { node, lines } jo muotoillulle solmulle (ei muotoilla kahdesti). */
+export function renderGroup(group, pre) {
   const lines = [];
   if (group.chapter) {
     lines.push([numOf(group.chapter), headingOf(group.chapter)].filter(Boolean).join(" "));
@@ -405,48 +373,10 @@ export function renderGroup(group) {
     if (n.name === "section") {
       secCount++;
       if (secCount > 1) lines.push("", "Toinen sanamuoto samasta pykälästä (katso huomautus yllä, joka kertoo kumpi on aiempi):");
-      lines.push(...render(n, 0));
+      lines.push(...(pre && pre.node === n ? pre.lines : render(n, 0)));
     } else {
       lines.push("", ...render(n, 0));
     }
   }
   return lines.join("\n");
-}
-
-/** Etsii tekstistä hakusanan ja palauttaa osumat pykälittäin. */
-export function searchText(doc, query, maxHits = 30) {
-  const rootEl = provisionsRoot(doc.act);
-  if (!rootEl) return [];
-  const q = query.toLowerCase();
-  const hits = [];
-  for (const sec of findAll(rootEl, "section", [], true)) {
-    const t = textOf(sec);
-    const i = t.toLowerCase().indexOf(q);
-    if (i === -1) continue;
-    const chap = ancestor(sec, new Set(["chapter"]));
-    const start = Math.max(0, i - 120);
-    const snippet = (start > 0 ? "…" : "") + t.slice(start, i + q.length + 160) + "…";
-    hits.push({
-      chapter: chap ? numOf(chap) : null,
-      section: numOf(sec),
-      heading: headingOf(sec),
-      versionLabel: sec.attrs["finlex:originalVersionLabel"] ?? null,
-      snippet,
-    });
-    if (hits.length >= maxHits) break;
-  }
-  return hits;
-}
-
-/** Luettelo pykälänumeroista (virheilmoituksia varten). */
-export function sectionNumbers(doc, luku) {
-  const rootEl = provisionsRoot(doc.act);
-  if (!rootEl) return [];
-  let scope = rootEl;
-  if (luku) scope = findChapter(doc, luku) ?? rootEl;
-  return [...new Set(findAll(scope, "section", [], true).map(numOf))];
-}
-
-function escapeRe(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

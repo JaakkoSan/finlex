@@ -74,6 +74,29 @@ export async function fetchText(url, { ttl = 3600, accept = "application/xml" } 
   throw lastErr instanceof FinlexError ? lastErr : new FinlexError(`Finlexiin ei saatu yhteyttä: ${lastErr?.message ?? lastErr}`, 0);
 }
 
+/** Lukee välimuistiin tallennetun johdetun tiedon (JSON). Palauttaa undefined, jos ei löydy. */
+export async function cacheGetJson(key) {
+  const cache = cacheApi();
+  if (!cache) return undefined;
+  const hit = await cache.match(new Request(key));
+  if (!hit) return undefined;
+  try {
+    return await hit.json();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Tallentaa johdetun tiedon (JSON) välimuistiin ttl sekunniksi. */
+export async function cachePutJson(key, value, ttl) {
+  const cache = cacheApi();
+  if (!cache || !(ttl > 0)) return;
+  await cache.put(
+    new Request(key),
+    new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json", "Cache-Control": `max-age=${ttl}` } }),
+  );
+}
+
 /** Hakee binääritiedoston (esim. PDF). 404 palauttaa null. */
 export async function fetchBytes(url, { ttl = 86400 } = {}) {
   const cache = cacheApi();

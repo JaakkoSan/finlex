@@ -1,19 +1,8 @@
 // MCP-työkalut: määrittelyt ja toteutukset.
 
-import { fetchText, fetchHead, consolidatedUrl, originalUrl, listUrl, webUrl, FinlexError } from "./finlex.js";
-import {
-  parseStatute,
-  metadata,
-  tableOfContents,
-  findSections,
-  findChapter,
-  renderGroup,
-  render,
-  searchText,
-  sectionNumbers,
-  futureWarning,
-  setFutureAmendments,
-} from "./statute.js";
+import { fetchText, fetchHead, cacheGetJson, cachePutJson, consolidatedUrl, originalUrl, listUrl, webUrl, FinlexError } from "./finlex.js";
+import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
+import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import {
   SOURCES,
   decisionUrl,
@@ -217,41 +206,133 @@ function versionTokenToId(tok) {
   return m ? `${+m[2]}/${m[1]}` : null;
 }
 
+// Hakemiston osat välimuistissa (ks. statuteIndex.js). Lisäksi isolaatin muistissa
+// pidetään viimeksi käytetyt osat: peräkkäiset kutsut samaan säädökseen (yleistä)
+// eivät tarvitse edes JSON-jäsennystä.
+const MEMO_MAX = 32;
+const memo = new Map();
+
+function memoGet(key) {
+  const e = memo.get(key);
+  if (!e) return undefined;
+  memo.delete(key);
+  if (e.exp < Date.now()) return undefined;
+  memo.set(key, e);
+  return e.value;
+}
+
+function memoSet(key, value, ttl) {
+  memo.delete(key);
+  memo.set(key, { value, exp: Date.now() + ttl * 1000 });
+  while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
+}
+
+const partKey = (url, part) => `${url}?_index=${INDEX_VERSION}&_part=${part}`;
+
+/** Lukee hakemiston osan muistista tai välimuistista. undefined, jos ei löydy. */
+async function getPart(url, part, ttl) {
+  const key = partKey(url, part);
+  let v = memoGet(key);
+  if (v !== undefined) return v;
+  v = await cacheGetJson(key);
+  if (v !== undefined) memoSet(key, v, ttl);
+  return v;
+}
+
+async function putParts(url, ttl, parts) {
+  await Promise.all(
+    Object.entries(parts).map(([part, v]) => {
+      memoSet(partKey(url, part), v, ttl);
+      return cachePutJson(partKey(url, part), v, ttl);
+    }),
+  );
+}
+
 async function loadStatute(args) {
   const year = asYear(args.vuosi);
   const number = asNumber(args.numero);
   const lang = asLang(args.kieli);
   const original = args.teksti === "alkuperainen";
-  let url;
-  let fellBack = false;
-  if (original) {
-    url = originalUrl(year, number, lang);
-  } else {
-    url = consolidatedUrl(year, number, lang, versionToken(args.versio));
-  }
+  const requestedUrl = original ? originalUrl(year, number, lang) : consolidatedUrl(year, number, lang, versionToken(args.versio));
   const ttl = original || (args.versio && args.versio !== "latest") ? 30 * 86400 : 6 * 3600;
-  let xml = await fetchText(url, { ttl });
-  if (xml === null && !original) {
-    if (args.versio) {
-      throw new UserError(
-        `Versiota ${args.versio} ei löytynyt säädökselle ${number}/${year}. Tarkista muutossäädösten numerot saados_tiedot-työkalulla.`,
-      );
+
+  // Hakemisto tallennetaan pyydetyllä osoitteella; base kertoo, käytettiinkö alkuperäistä.
+  let base = await getPart(requestedUrl, "base", ttl);
+  let built = null;
+  if (!base || base.v !== INDEX_VERSION) {
+    let url = requestedUrl;
+    let fellBack = false;
+    let xml = await fetchText(url, { ttl });
+    if (xml === null && !original) {
+      if (args.versio) {
+        throw new UserError(
+          `Versiota ${args.versio} ei löytynyt säädökselle ${number}/${year}. Tarkista muutossäädösten numerot saados_tiedot-työkalulla.`,
+        );
+      }
+      // Ajantasaistettua versiota ei ole: käytä alkuperäistä ja kerro siitä.
+      url = originalUrl(year, number, lang);
+      xml = await fetchText(url, { ttl: 30 * 86400 });
+      fellBack = true;
     }
-    // Ajantasaistettua versiota ei ole: käytä alkuperäistä ja kerro siitä.
-    url = originalUrl(year, number, lang);
-    xml = await fetchText(url, { ttl: 30 * 86400 });
-    fellBack = true;
+    if (xml === null) throw new UserError(`Säädöstä ${number}/${year} ei löytynyt Finlexistä (${lang}).`);
+    const doc = parseStatute(xml);
+    if (!doc) throw new UserError(`Finlexin vastausta säädökselle ${number}/${year} ei voitu tulkita.`);
+    built = { ...buildIndex(doc), doc };
+    base = { ...built.base, apiUrl: url, fellBack };
+    const parts = { base, texts: built.texts };
+    built.shards.forEach((sh, i) => (parts[`g${i}`] = sh));
+    await putParts(requestedUrl, ttl, parts);
   }
-  if (xml === null) throw new UserError(`Säädöstä ${number}/${year} ei löytynyt Finlexistä (${lang}).`);
-  const doc = parseStatute(xml);
-  if (!doc) throw new UserError(`Finlexin vastausta säädökselle ${number}/${year} ei voitu tulkita.`);
-  const meta = metadata(doc);
+  const meta = base.meta;
   const today = new Date().toISOString().slice(0, 10);
   const future = new Map();
   for (const r of meta.relations.amendedBy ?? []) {
     if (r.id && r.entryIntoForce && r.entryIntoForce > today) future.set(r.id, fmtDate(r.entryIntoForce));
   }
-  return { doc, meta, year, number, lang, original: original || fellBack, fellBack, apiUrl: url, future };
+  const fellBack = !!base.fellBack;
+  return { base, built, meta, year, number, lang, original: original || fellBack, fellBack, apiUrl: base.apiUrl, requestedUrl, ttl, future };
+}
+
+/** Säädöksen XML jäsennettynä (vain kun hakemiston osa puuttuu välimuistista). */
+async function loadDoc(s) {
+  if (s.built) return s.built.doc;
+  const xml = await fetchText(s.apiUrl, { ttl: s.ttl });
+  const doc = xml === null ? null : parseStatute(xml);
+  if (!doc) throw new UserError(`Säädöksen ${s.number}/${s.year} tekstiä ei saatu Finlexistä.`);
+  return doc;
+}
+
+/**
+ * Hakemiston osa. partOf(base) antaa osan nimen. Jos osa on poistunut välimuistista,
+ * hakemisto muodostetaan uudelleen ja kaikki osat tallennetaan (myös base, koska
+ * Finlexin päivittämässä tekstissä osien määrä voi olla eri).
+ */
+async function loadPart(s, partOf) {
+  if (s.built) {
+    const name = partOf(s.base);
+    return name === "texts" ? s.built.texts : s.built.shards[Number(name.slice(1))];
+  }
+  const v = await getPart(s.requestedUrl, partOf(s.base), s.ttl);
+  if (v !== undefined) return v;
+  const idx = buildIndex(await loadDoc(s));
+  const base = { ...idx.base, apiUrl: s.apiUrl, fellBack: s.fellBack };
+  const parts = { base, texts: idx.texts };
+  idx.shards.forEach((sh, i) => (parts[`g${i}`] = sh));
+  await putParts(s.requestedUrl, s.ttl, parts);
+  s.base = base;
+  return parts[partOf(base)];
+}
+
+const loadTexts = (s) => loadPart(s, () => "texts");
+const loadShard = (s, pykala) => loadPart(s, (base) => `g${shardOf(normNum(pykala), base.n)}`);
+
+/** Lukujen muotoiltu teksti. Erillinen osa; tarvitaan harvoin. */
+async function loadChapters(s) {
+  let chapters = await getPart(s.requestedUrl, "ch", s.ttl);
+  if (Array.isArray(chapters)) return chapters;
+  chapters = buildChapters(await loadDoc(s));
+  await putParts(s.requestedUrl, s.ttl, { ch: chapters });
+  return chapters;
 }
 
 function header(s) {
@@ -360,7 +441,13 @@ async function saadosTiedot(args) {
     let note = "";
     const cap = key === "amendedBy" ? max : 15;
     if (key === "amendedBy") {
-      list = [...refs].sort((a, b) => (b.entryIntoForce ?? "").localeCompare(a.entryIntoForce ?? ""));
+      // ISO-päivämäärät: tavallinen merkkijonovertailu. localeCompare alustaisi
+      // ensimmäisellä kutsulla ICU-lajittelun, mikä vie useita millisekunteja CPU-aikaa.
+      list = [...refs].sort((a, b) => {
+        const x = b.entryIntoForce ?? "";
+        const y = a.entryIntoForce ?? "";
+        return x < y ? -1 : x > y ? 1 : 0;
+      });
     }
     if (list.length > cap) {
       note = key === "amendedBy" ? ` (näytetään ${cap} uusinta / ${list.length})` : ` (näytetään ${cap} / ${list.length})`;
@@ -374,19 +461,19 @@ async function saadosTiedot(args) {
       lines.push(`- ${r.id ?? r.href}${d}${fut}${n}`);
     }
   }
-  lines.push("", "Sisällysluettelo:", tableOfContents(s.doc));
+  lines.push("", "Sisällysluettelo:", s.base.toc);
   return clip(lines.join("\n"));
 }
 
 async function haePykala(args) {
   if (!args.pykala && !args.luku) throw new UserError("Anna pykälä, luku tai molemmat.");
   const s = await loadStatute(args);
-  setFutureAmendments(s.future);
+  const fin = (t) => finalize(t, s.future);
   const out = [header(s), ""];
   if (args.pykala) {
-    const groups = findSections(s.doc, args.pykala, args.luku);
+    const groups = findGroups(s.base, await loadShard(s, args.pykala), args.pykala, args.luku);
     if (!groups.length) {
-      const nums = sectionNumbers(s.doc, args.luku);
+      const nums = sectionNumbers(s.base, args.luku);
       const where = args.luku ? ` luvusta ${args.luku}` : "";
       throw new UserError(
         `Pykälää ${args.pykala}${where} ei löytynyt. ` +
@@ -395,12 +482,7 @@ async function haePykala(args) {
       );
     }
     if (groups.length > 3 && !args.luku) {
-      const rows = groups.map((g) => {
-        const sec = g.nodes.find((n) => n.name === "section");
-        const chap = g.chapter ? renderGroup({ chapter: g.chapter, nodes: [] }) : "(ei lukua)";
-        const head = sec ? renderGroup({ chapter: null, nodes: [sec] }).split("\n")[0] : "";
-        return `- ${chap}: ${head}`;
-      });
+      const rows = groups.map((g) => `- ${g.c >= 0 ? s.base.chapters[g.c].l : "(ei lukua)"}: ${fin(g.h1)}`);
       out.push(
         `Pykälä ${args.pykala} on ${groups.length} luvussa, koska tässä laissa numerointi alkaa joka luvussa alusta. Anna luku. Vaihtoehdot:`,
         ...rows,
@@ -413,11 +495,12 @@ async function haePykala(args) {
         "",
       );
     }
-    out.push(groups.map(renderGroup).join("\n\n----\n\n"));
+    out.push(fin(groups.map((g) => g.r).join("\n\n----\n\n")));
   } else {
-    const chap = findChapter(s.doc, args.luku);
-    if (!chap) throw new UserError(`Lukua ${args.luku} ei löytynyt säädöksestä.`);
-    out.push(render(chap, 0).join("\n"));
+    const ci = chapterIndex(s.base, args.luku);
+    if (ci === -1) throw new UserError(`Lukua ${args.luku} ei löytynyt säädöksestä.`);
+    const chapters = await loadChapters(s);
+    out.push(fin(chapters[ci]));
   }
   return clip(out.join("\n"));
 }
@@ -426,7 +509,7 @@ async function etsiSaadoksesta(args) {
   const q = String(args.hakusana ?? "").trim();
   if (q.length < 3) throw new UserError("Hakusanan pitää olla vähintään 3 merkkiä.");
   const s = await loadStatute(args);
-  const hits = searchText(s.doc, q);
+  const hits = searchIndex(s.base, await loadTexts(s), q);
   const futureOf = (label) => {
     const m = label && label.match(/(\d{4})\/(\d+)$/);
     const d = m ? s.future.get(`${m[2]}/${m[1]}`) : null;

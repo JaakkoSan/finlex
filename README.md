@@ -33,7 +33,7 @@ Kaikissa tekstityökaluissa:
 - Alkuperäinen: `/akn/fi/act/statute/{vuosi}/{numero}/fin@`
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
 - Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
-- Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API).
+- Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API). Säädös jäsennetään kerran, ja välimuistiin tallennetaan valmis hakemisto osina (perustiedot, hakuteksti, muotoillut pykälät), jotta kutsu pysyy Workersin ilmaistason CPU-rajan (10 ms) alla.
 
 ## Käyttörajoitus ja merkinnät
 
