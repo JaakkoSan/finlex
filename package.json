@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Finlex MCP -palvelin Cloudflare Workersissa: ajantasainen ja alkuperäinen säädösteksti Finlexin avoimesta datasta.",
+  "license": "MIT",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

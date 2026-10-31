@@ -12,7 +12,7 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - Ei tallennusta. Välimuisti vain Cloudflaren Cache API:ssa.
 - Teksti suoraan Finlexin avoimesta datasta, ei välipalvelimia.
 - Oletuksena ajantasainen `fin@latest`. Tulevat muutokset merkitään näkyvästi.
-- Repo: GitHub, Claude tekee commitit ja Jaakko pushaa.
+- Repo: GitHub. Commitit tehdään paikallisesti ja pushataan GitHubiin.
 
 ## Rakenne
 
@@ -26,11 +26,12 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 
 ## Julkaisu
 
-- Worker `finlex-mcp` Jaakon omalla Cloudflare-tilillä, osoite https://finlex-mcp.jaakko-sandstrom.workers.dev/mcp
-- GitHub-repo JaakkoSan/finlex, Workers Builds julkaisee automaattisesti pushista main-haaraan.
+- Worker `finlex-mcp` Cloudflaressa, osoite `https://finlex-mcp.<alitunnus>.workers.dev/mcp`.
+- Workers Builds julkaisee automaattisesti pushista main-haaraan.
 
 ## Muutokset
 
 - 31.10.2026 v1.0: säädöstyökalut.
 - 31.10.2026 v1.1: viranomaisratkaisut (hae_ratkaisuja, hae_ratkaisu).
 - 31.10.2026 v1.2: käyttörajoitus (istunto + IP), työkalumerkinnät (readOnlyHint), vastauksen enimmäispituus 50 000 merkkiä. Tavoitteena haku Clauden connector-hakemistoon.
+- 31.10.2026: MIT-lisenssi, repo valmisteltu julkiseksi.

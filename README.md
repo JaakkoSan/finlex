@@ -66,3 +66,9 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 - Ratkaisuhaku palauttaa tulokset vanhimmasta uusimpaan; uusimpiin pääsee vuosirajauksella.
 - Ratkaisujen asiasana annetaan Finlexin muodossa, esim. `kameravalvonta`, `terveystiedot` (välilyönnit muutetaan alaviivoiksi).
 - Ajantasainen teksti on Finlexin toimituksellinen kooste, ei virallinen säädösteksti.
+
+## Lisenssi
+
+Koodi: MIT, ks. [LICENSE](LICENSE).
+
+Data: Finlexin avoin data, oikeusministeriö, lisenssi [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fi). Tämä ei ole oikeusministeriön tai Finlexin palvelu.
