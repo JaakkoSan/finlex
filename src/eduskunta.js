@@ -127,9 +127,9 @@ export function docWebUrl(edktunnus) {
 
 // ---------- Valtiopäiväasia ----------
 
-// Käsittelytapahtumat ja asiantuntijalausunnot jätetään pois: suurissa asioissa
-// (esim. HE 241/2020 vp) ne ovat yli 1,5 Mt, mikä ei mahdu ilmaistason CPU-rajaan.
-const MATTER_EXCLUDE = ["kasittelyt", "asiantuntijalausunnot", "asiasanat"];
+// Asiantuntijalausuntojen luettelo ja asiasanat jätetään pois (suurissa asioissa,
+// esim. HE 241/2020 vp, lausuntoluettelo on yli 0,5 Mt eikä sitä näytetä).
+const MATTER_EXCLUDE = ["asiantuntijalausunnot", "asiasanat"];
 
 /** Valtiopäiväasia tunnuksella. null, jos ei löydy. */
 export async function fetchMatter(tunnus, ttl) {

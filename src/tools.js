@@ -217,11 +217,12 @@ export const TOOLS = [
   {
     name: "eduskuntakasittely",
     description:
-      "Palauttaa asian (esim. hallituksen esitys) käsittelyn eduskunnassa: tila ja lopputulos, valiokunnan mietintö ja lausunnot (esim. perustuslakivaliokunnan lausunto), eduskunnan vastaus, lakiehdotusten päätökset (hyväksytty, hyväksytty muutettuna, hylätty) sekä vahvistettujen lakien säädösnumerot. Lähde: Eduskunnan avoin data.",
+      "Palauttaa asian (esim. hallituksen esitys) käsittelyn eduskunnassa: tila ja lopputulos, valiokunnan mietintö ja lausunnot (esim. perustuslakivaliokunnan lausunto), eduskunnan vastaus, lakiehdotusten päätökset (hyväksytty, hyväksytty muutettuna, hylätty), vahvistettujen lakien säädösnumerot sekä käsittelyn vaiheet päivämäärineen (lähetekeskustelu, valiokunnat, vastalauseet, ensimmäinen ja toinen käsittely). Lähde: Eduskunnan avoin data.",
     inputSchema: {
       type: "object",
       properties: {
         asia: { type: "string", description: "Asian tunnus, esim. \"HE 74/2022 vp\" tai \"HE 74/2022\". Myös lakialoitteet (LA), kansalaisaloitteet (KAA) ja muut valtiopäiväasiat." },
+        kaikki_vaiheet: { type: "boolean", description: "true = myös valiokuntien kokouskohtaiset vaiheet (asiantuntijakuulemiset, keskustelut). Oletus: vain päävaiheet." },
       },
       required: ["asia"],
     },
@@ -982,17 +983,61 @@ async function eduskuntakasittely(args) {
     if (bills.some((e) => e.saadoskokoelmaviite)) out.push("Säädöksen teksti: saados_tiedot tai hae_pykala (vuosi ja numero säädösnumerosta).");
   }
 
-  const comm = fi(m.valiokuntienViimeisimmatKasittelyt) ?? [];
-  const commLines = comm
-    .filter((k) => k?.valiokunta?.nimi)
-    .map((k) => `- ${k.valiokunta.nimi}: ${k.fraasi?.fraasisisalto ?? k.kasittelyvaihe ?? ""}${k.tapahtumapvm ? ` (${fmtDate(k.tapahtumapvm)})` : ""}`.trimEnd());
-  if (commLines.length) out.push("", "Valiokunnat (viimeisin käsittelyvaihe):", ...commLines);
+  const steps = matterSteps(fi(m.kasittelyt) ?? [], !!args.kaikki_vaiheet);
+  if (steps.length) {
+    out.push("", `Käsittelyn vaiheet${args.kaikki_vaiheet ? "" : " (päävaiheet; kaikki: kaikki_vaiheet: true)"}:`, ...steps);
+  } else {
+    // Varalla, jos tapahtumia ei ole: valiokuntien viimeisin vaihe.
+    const comm = fi(m.valiokuntienViimeisimmatKasittelyt) ?? [];
+    const commLines = comm
+      .filter((k) => k?.valiokunta?.nimi)
+      .map((k) => `- ${k.valiokunta.nimi}: ${k.fraasi?.fraasisisalto ?? k.kasittelyvaihe ?? ""}${k.tapahtumapvm ? ` (${fmtDate(k.tapahtumapvm)})` : ""}`.trimEnd());
+    if (commLines.length) out.push("", "Valiokunnat (viimeisin käsittelyvaihe):", ...commLines);
+  }
 
   const joined = (fi(m.yhdistetytAsiat) ?? []).map((a) => a?.eduskuntatunnus).filter(Boolean);
   if (joined.length) out.push("", `Yhdistetyt asiat: ${joined.join(", ")}`);
   const eu = (fi(m.euViittaukset) ?? []).map((a) => a?.eduskuntatunnus).filter(Boolean);
   if (eu.length) out.push("", `EU-viittaukset: ${eu.join(", ")}`);
   return clip(out.join("\n"));
+}
+
+// Käsittelytapahtumien päävaiheet (yleinenkasittelyvaihetunnus). Muut ovat valiokuntien
+// kokouskohtaisia vaiheita (asiantuntijakuulemiset, keskustelut, esittelyt), joita
+// suurissa asioissa on satoja. KASYLE on pöytäkirjan asiakohdan viite ilman sisältöä.
+const MAIN_STEPS = new Set(["ANTO", "ILM", "LK", "ILMVK", "ILMVKA", "VK", "VKPM", "VKPLA", "VKPP", "EV", "TOIMEV", "PERU", "RAU", "HYL"]);
+const PLENARY_STEP = /^(1K|2K|3K|OAO|AK|AINK|ENNK|PALVK)/;
+
+function matterSteps(list, all) {
+  const keep = (k) => {
+    const c = k.yleinenkasittelyvaihetunnus ?? "";
+    if (c === "KASYLE") return false;
+    if (all) return true;
+    const f = k.fraasi?.fraasisisalto ?? "";
+    if (MAIN_STEPS.has(c) || PLENARY_STEP.test(c)) return true;
+    // Valiokunnan ratkaisu (mietintöluonnos hyväksytty, vastalauseet).
+    if (/^(YKSKAS|RATKAS)/.test(c)) return /hyväksyi|vastalause|äänest/i.test(f);
+    return false;
+  };
+  const tp = (k) => {
+    const m = String(k.kasittelytunnus ?? "").match(/TP-(\d+)$/);
+    return m ? +m[1] : 0;
+  };
+  // Merkkijonovertailu ilman localeComparea (ICU:n alustus on kylmänä hidas). ISO-päivämäärät järjestyvät oikein.
+  const cmp = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+  const rows = list.filter(keep).sort((a, b) => cmp(String(a.tapahtumapvm ?? ""), String(b.tapahtumapvm ?? "")) || tp(a) - tp(b));
+  const out = [];
+  let prev = "";
+  for (const k of rows) {
+    let f = String(k.fraasi?.fraasisisalto ?? "").replace(/\s+/g, " ").trim();
+    const who = k.valiokunta?.nimi ? `${k.valiokunta.nimi}${k.valiokunta.jaosto?.nimi ? ` (${k.valiokunta.jaosto.nimi})` : ""}: ` : "";
+    const phase = String(k.kasittelyvaihe ?? k.yleinenkasittelyvaihe ?? "").replace(/[.,]?\s*aliasia$/i, "").replace(/\.$/, "");
+    if (f.replace(/\.$/, "").toLowerCase() === phase.toLowerCase()) f = "";
+    const line = `- ${fmtDate(k.tapahtumapvm) ?? "?"} ${phase}${who || f ? " – " : ""}${who}${f}`;
+    if (line !== prev) out.push(line);
+    prev = line;
+  }
+  return out;
 }
 
 // --- Asiakirjan hakemisto ---

@@ -78,7 +78,7 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 - Ajantasainen teksti on Finlexin toimituksellinen kooste, ei virallinen säädösteksti.
 - Eduskunnan asiakirjoista on tekstiä vuodesta 1999 alkaen; vanhemmista on rajapinnassa vain PDF. Vuodesta 2015 asiakirjat ovat Vaski-muodossa, jossa valiokunnan muutokset hallituksen esityksen tekstiin merkitään (`«…»`). Vanhemmista asiakirjoista rakenne tunnistetaan otsikoista.
 - Pykälän perustelut tunnistetaan valiokunnan yksityiskohtaisten perustelujen pykäläotsikoista ("51 a §. Otsikko."). Valiokunta käsittelee osaa pykälistä vain yleisperusteluissa.
-- Asian käsittelytiedoista näytetään valiokuntien viimeisin vaihe, ei jokaista käsittelytapahtumaa: suurimmissa asioissa tapahtumia on satoja (yli 1,5 Mt).
+- Asian käsittelyn vaiheista näytetään oletuksena päävaiheet (vireilletulo, lähetekeskustelu, valiokuntien ratkaisut ja vastalauseet, mietintö ja lausunnot, täysistuntokäsittelyt, eduskunnan vastaus). Valiokuntien kokouskohtaiset vaiheet saa parametrilla `kaikki_vaiheet`; suurimmissa asioissa niitä on satoja.
 - Eduskunnan asiakirjahaku vertaa sanoja sellaisinaan, joten taivutusmuoto vaikuttaa osumiin. Haku on hidas (useita sekunteja).
 
 ## Lisenssi
