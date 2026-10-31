@@ -1,6 +1,6 @@
 # finlex-mcp
 
-Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin suoraan Finlexin avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
+Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
 
 ## Työkalut
 
@@ -10,6 +10,8 @@ Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin 
 | `saados_tiedot` | Perustiedot, voimassaolo, muutossäädökset voimaantulopäivineen, esityöt, sisällysluettelo |
 | `hae_pykala` | Pykälän tai koko luvun teksti momentteineen ja Finlexin huomautuksineen |
 | `etsi_saadoksesta` | Sanahaku yhden säädöksen tekstistä, palauttaa pykälät ja otteet |
+| `hae_ratkaisuja` | Tietosuojavaltuutetun, eduskunnan oikeusasiamiehen tai oikeuskanslerin ratkaisut otsikolla, asiasanalla tai vuosilla |
+| `hae_ratkaisu` | Yhden ratkaisun tiedot ja koko teksti (PDF-ratkaisuista teksti puretaan) |
 
 Kaikissa tekstityökaluissa:
 
@@ -30,6 +32,7 @@ Kaikissa tekstityökaluissa:
 - Ajantasainen: `/akn/fi/act/statute-consolidated/{vuosi}/{numero}/fin@latest`
 - Alkuperäinen: `/akn/fi/act/statute/{vuosi}/{numero}/fin@`
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
+- Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
 - Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API).
 
 ## Kehitys
@@ -51,5 +54,8 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 ## Rajoitukset
 
 - Finlexin rajapinnassa ei ole koko tekstin hakua kaikista säädöksistä. Haku toimii nimen osalla ja asiasanoilla, ja yhden säädöksen sisällä sanahaulla.
-- Oikeuskäytäntö (KKO, KHO) ei ole Finlexin avoimessa rajapinnassa. Siellä on oikeuskanslerin, eduskunnan oikeusasiamiehen ja tietosuojavaltuutetun ratkaisuja, joita tämä versio ei vielä hae.
+- Tuomioistuinten ratkaisut (KKO, KHO) eivät ole Finlexin avoimessa rajapinnassa.
+- Oikeusasiamiehen ratkaisut ja oikeuskanslerin päätökset ovat Finlexissä pääosin PDF:nä. Teksti puretaan PDF:stä automaattisesti (unpdf), joten rivitys ja taulukot voivat poiketa alkuperäisestä.
+- Ratkaisuhaku palauttaa tulokset vanhimmasta uusimpaan; uusimpiin pääsee vuosirajauksella.
+- Ratkaisujen asiasana annetaan Finlexin muodossa, esim. `kameravalvonta`, `terveystiedot` (välilyönnit muutetaan alaviivoiksi).
 - Ajantasainen teksti on Finlexin toimituksellinen kooste, ei virallinen säädösteksti.

@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 4, "tools/list (4 työkalua)");
+check(list.result?.tools?.length === 6, "tools/list (6 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -45,6 +45,11 @@ const cases = [
   ["hae_pykala", { vuosi: 2018, numero: "1050", pykala: "1", teksti: "alkuperainen" }, (t) => t.includes("ALKUPERÄINEN")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "3", versio: "448/2024" }, (t) => t.includes("3 §")],
   ["hae_pykala", { vuosi: 2019, numero: "872", pykala: "1", kieli: "swe" }, (t) => t.includes("1 §")],
+  ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (t) => t.includes("numero") && t.includes("Tietosuojavaltuutettu")],
+  ["hae_ratkaisuja", { lahde: "oikeusasiamies", otsikko: "kotihoito" }, (t) => t.includes("numero")],
+  ["hae_ratkaisu", { lahde: "tietosuojavaltuutettu", vuosi: 2025, numero: "2443" }, (t) => t.includes("TSV/61/2021") && t.includes("Asia")],
+  ["hae_ratkaisu", { lahde: "oikeusasiamies", vuosi: 2025, numero: "231" }, (t) => t.includes("PDF:stä") && t.includes("EOAK/231/2025")],
+  ["hae_ratkaisu", { lahde: "oikeuskansleri", vuosi: 2025, numero: "10961" }, (t) => t.includes("KANTELU")],
 ];
 
 for (const [name, args, pred] of cases) {

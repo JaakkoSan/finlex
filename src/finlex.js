@@ -74,6 +74,32 @@ export async function fetchText(url, { ttl = 3600, accept = "application/xml" } 
   throw lastErr instanceof FinlexError ? lastErr : new FinlexError(`Finlexiin ei saatu yhteyttä: ${lastErr?.message ?? lastErr}`, 0);
 }
 
+/** Hakee binääritiedoston (esim. PDF). 404 palauttaa null. */
+export async function fetchBytes(url, { ttl = 86400 } = {}) {
+  const cache = cacheApi();
+  const cacheKey = new Request(url + (url.includes("?") ? "&" : "?") + "_bytes=1");
+  if (cache) {
+    const hit = await cache.match(cacheKey);
+    if (hit) return hit.status === 404 ? null : new Uint8Array(await hit.arrayBuffer());
+  }
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/pdf" } });
+    if (res.status === 404) return null;
+    if (res.ok) {
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (cache && ttl > 0) {
+        await cache.put(cacheKey, new Response(buf, { headers: { "Cache-Control": `max-age=${ttl}` } }));
+      }
+      return buf;
+    }
+    if (!RETRY_STATUS.has(res.status) || attempt === MAX_ATTEMPTS - 1) {
+      throw new FinlexError(`Finlex vastasi ${res.status}`, res.status);
+    }
+    await sleep(500 * 2 ** attempt);
+  }
+  return null;
+}
+
 /**
  * Lukee vastauksen alusta vain sen verran, että otsikko ja voimassaolo löytyvät,
  * ja katkaisee latauksen. Säästää kaistaa hakutulosten otsikoissa.

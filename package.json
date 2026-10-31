@@ -1,6 +1,6 @@
 {
   "name": "finlex-mcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "Finlex MCP -palvelin Cloudflare Workersissa: ajantasainen ja alkuperäinen säädösteksti Finlexin avoimesta datasta.",
@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "unpdf": "^1.9.1"
   }
 }

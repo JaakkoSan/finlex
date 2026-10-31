@@ -8,7 +8,7 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 
 ## Päätökset
 
-- Cloudflare Worker, tilaton MCP (Streamable HTTP, JSON-vastaukset), ei riippuvuuksia ajonaikana.
+- Cloudflare Worker, tilaton MCP (Streamable HTTP, JSON-vastaukset). Ainoa ajonaikainen riippuvuus on unpdf PDF-ratkaisujen tekstin purkuun.
 - Ei tallennusta. Välimuisti vain Cloudflaren Cache API:ssa.
 - Teksti suoraan Finlexin avoimesta datasta, ei välipalvelimia.
 - Oletuksena ajantasainen `fin@latest`. Tulevat muutokset merkitään näkyvästi.
@@ -20,10 +20,16 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/tools.js`: työkalujen määrittelyt ja toteutus
 - `src/statute.js`: Akoma Ntoso -dokumentin tulkinta ja tekstiksi muotoilu
 - `src/finlex.js`: Finlex-rajapinnan asiakas ja välimuisti
+- `src/decisions.js`: viranomaisratkaisut (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) ja PDF-tekstin purku
 - `src/xml.js`: pieni XML-jäsennin
 - `test/smoke.mjs`: savutesti oikeaa Finlexiä vasten
 
-## Avoimet
+## Julkaisu
 
-- Julkaisu Cloudflareen ja liittimen lisäys Claudeen.
-- Mahdollinen jatko: tietosuojavaltuutetun ja oikeuskanslerin ratkaisut (`/akn/fi/judgment/...`).
+- Worker `finlex-mcp` Jaakon omalla Cloudflare-tilillä, osoite https://finlex-mcp.jaakko-sandstrom.workers.dev/mcp
+- GitHub-repo JaakkoSan/finlex, Workers Builds julkaisee automaattisesti pushista main-haaraan.
+
+## Muutokset
+
+- 31.10.2026 v1.0: säädöstyökalut.
+- 31.10.2026 v1.1: viranomaisratkaisut (hae_ratkaisuja, hae_ratkaisu).

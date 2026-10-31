@@ -14,6 +14,16 @@ import {
   futureWarning,
   setFutureAmendments,
 } from "./statute.js";
+import {
+  SOURCES,
+  decisionUrl,
+  decisionWebUrl,
+  decisionListUrl,
+  keywordValue,
+  parseDecision,
+  renderDecisionBody,
+  pdfText,
+} from "./decisions.js";
 
 const MAX_OUTPUT = 90_000;
 
@@ -100,6 +110,45 @@ export const TOOLS = [
         teksti: commonProps.teksti,
       },
       required: ["vuosi", "numero", "hakusana"],
+    },
+  },
+  {
+    name: "hae_ratkaisuja",
+    description:
+      "Hakee Finlexistä viranomaisratkaisuja: tietosuojavaltuutettu, eduskunnan oikeusasiamies tai oikeuskansleri. Haku otsikon osalla, asiasanalla ja/tai vuosilla. Palauttaa ratkaisujen numerot, päivämäärät ja otsikot. Tuomioistuinten (KKO, KHO) ratkaisuja Finlexin avoimessa datassa ei ole.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lahde: {
+          type: "string",
+          enum: ["tietosuojavaltuutettu", "oikeusasiamies", "oikeuskansleri"],
+          description: "Ratkaisija.",
+        },
+        otsikko: { type: "string", description: "Merkkijono, jonka ratkaisun otsikko sisältää (esim. \"kameravalvonta\", \"terveys\")." },
+        asiasana: { type: "string", description: "Finlexin asiasana, esim. \"kameravalvonta\", \"terveystiedot\", \"oikeus tulla unohdetuksi\"." },
+        alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
+        paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta." },
+      },
+      required: ["lahde"],
+    },
+  },
+  {
+    name: "hae_ratkaisu",
+    description:
+      "Palauttaa yhden viranomaisratkaisun (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) tiedot ja tekstin: päivämäärä, diaarinumero, ratkaisija, asiasanat ja koko teksti. Jos ratkaisu on Finlexissä vain PDF:nä, teksti puretaan PDF:stä.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        lahde: {
+          type: "string",
+          enum: ["tietosuojavaltuutettu", "oikeusasiamies", "oikeuskansleri"],
+          description: "Ratkaisija.",
+        },
+        vuosi: { type: "integer", description: "Ratkaisun vuosi hakutuloksesta, esim. 2025." },
+        numero: { type: "string", description: "Ratkaisun numero hakutuloksesta, esim. \"2443\"." },
+      },
+      required: ["lahde", "vuosi", "numero"],
     },
   },
 ];
@@ -376,11 +425,112 @@ async function etsiSaadoksesta(args) {
   return clip(out.join("\n"));
 }
 
+// ---------- Viranomaisratkaisut ----------
+
+function asSource(v) {
+  if (!SOURCES[v]) throw new UserError(`Anna lahde: ${Object.keys(SOURCES).join(", ")}.`);
+  return SOURCES[v];
+}
+
+async function loadDecision(src, year, number) {
+  const xml = await fetchText(decisionUrl(src, year, number), { ttl: 7 * 86400 });
+  if (xml === null) return null;
+  return parseDecision(xml);
+}
+
+async function haeRatkaisuja(args) {
+  const src = asSource(args.lahde);
+  const page = Math.max(1, Number(args.sivu) || 1);
+  let start = args.alkaen_vuosi ? asYear(args.alkaen_vuosi) : undefined;
+  let end = args.paattyen_vuosi ? asYear(args.paattyen_vuosi) : undefined;
+  let note = "";
+  if (!args.otsikko && !args.asiasana && !start && !end) {
+    const y = new Date().getUTCFullYear();
+    start = y - 1;
+    end = y;
+    note = ` (ei hakuehtoja, näytetään vuodet ${start}–${end})`;
+  }
+  const params = {
+    titleContains: args.otsikko,
+    keyword: args.asiasana ? keywordValue(args.asiasana) : undefined,
+    startYear: start,
+    endYear: end,
+    limit: 10,
+    page,
+    sortBy: "dateIssued",
+  };
+  const raw = await fetchText(decisionListUrl(src, params), { ttl: 3600, accept: "application/json" });
+  const list = raw ? JSON.parse(raw) : [];
+  if (!list.length) {
+    return page > 1
+      ? "Ei enempää tuloksia."
+      : "Ei osumia. Kokeile lyhyempää otsikon osaa, toista asiasanaa tai laajempaa vuosiväliä.";
+  }
+  const items = [];
+  const seen = new Set();
+  for (const it of list) {
+    const m = String(it.akn_uri).match(/judgment\/[^/]+\/(\d{4})\/([^/]+)\//);
+    if (!m || seen.has(`${m[1]}/${m[2]}`)) continue;
+    seen.add(`${m[1]}/${m[2]}`);
+    items.push({ year: m[1], number: m[2] });
+  }
+  const docs = await Promise.all(items.map((it) => loadDecision(src, it.year, it.number).catch(() => null)));
+  const rows = items.map((it, i) => {
+    const d = docs[i];
+    const date = d?.dateIssued ? fmtDate(d.dateIssued) : "?";
+    const diary = d?.diaryNumber ? ` (${d.diaryNumber})` : "";
+    return `vuosi ${it.year}, numero ${it.number}: ${date} ${d?.title ?? "(otsikko ei saatavilla)"}${diary}`;
+  });
+  let out = `${src.label}, hakutulokset (sivu ${page})${note}. Järjestys: vanhimmasta uusimpaan.\n` + rows.join("\n");
+  if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1} tai rajaa vuosilla.`;
+  out += "\n\nHae ratkaisun teksti työkalulla hae_ratkaisu (lahde, vuosi, numero).";
+  return out;
+}
+
+async function haeRatkaisu(args) {
+  const src = asSource(args.lahde);
+  const year = asYear(args.vuosi);
+  const number = asNumber(args.numero);
+  const d = await loadDecision(src, year, number);
+  if (!d) throw new UserError(`Ratkaisua ${number}/${year} (${src.label}) ei löytynyt Finlexistä.`);
+  const lines = [`${src.label}: ${d.title ?? "(otsikoton ratkaisu)"}`];
+  if (d.dateIssued) lines.push(`Päivämäärä: ${fmtDate(d.dateIssued)}`);
+  if (d.diaryNumber) lines.push(`Diaarinumero: ${d.diaryNumber}`);
+  if (d.decisionMaker) lines.push(`Ratkaisija: ${d.decisionMaker}`);
+  if (d.presentingOfficial) lines.push(`Esittelijä: ${d.presentingOfficial}`);
+  if (d.typeOfMeasure) lines.push(`Toimenpide: ${d.typeOfMeasure}`);
+  if (d.legalBasis) lines.push(`Peruste: ${d.legalBasis}`);
+  if (d.administrativeBranch) lines.push(`Hallinnonala: ${d.administrativeBranch}`);
+  if (d.keywords.length) lines.push(`Asiasanat: ${d.keywords.join(", ")}`);
+  lines.push(`Lähde: ${decisionWebUrl(src, year, number)}`);
+
+  const bodyText = renderDecisionBody(d.body);
+  if (bodyText) lines.push("", bodyText);
+
+  for (const rel of d.pdfs.slice(0, 2)) {
+    const url = `${decisionUrl(src, year, number)}/${rel.replace(/^\.?\//, "")}`;
+    try {
+      const pdf = await pdfText(url);
+      if (pdf?.text) {
+        lines.push("", `--- Ratkaisun teksti PDF:stä (${pdf.pages} s., automaattisesti purettu, muotoilu voi poiketa alkuperäisestä) ---`, pdf.text);
+      } else {
+        lines.push("", `PDF: ${url} (tekstiä ei saatu purettua)`);
+      }
+    } catch (e) {
+      lines.push("", `PDF: ${url} (purku epäonnistui: ${e?.message ?? e})`);
+    }
+  }
+  if (!bodyText && !d.pdfs.length) lines.push("", "(Ratkaisulle ei ole tekstiä Finlexin avoimessa datassa.)");
+  return clip(lines.join("\n"));
+}
+
 const HANDLERS = {
   hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
   hae_pykala: haePykala,
   etsi_saadoksesta: etsiSaadoksesta,
+  hae_ratkaisuja: haeRatkaisuja,
+  hae_ratkaisu: haeRatkaisu,
 };
 
 export async function callTool(name, args = {}) {
