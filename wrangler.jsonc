@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "finlex-mcp",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  // Pyyntöjen sisältöä ei tallenneta mihinkään. Välimuisti: Cloudflaren Cache API.
+  // Valinnainen salainen polku: aseta salaisuus MCP_PATH_SECRET (wrangler secret put MCP_PATH_SECRET),
+  // jolloin osoite on /mcp/<salaisuus> eikä pelkkä /mcp.
+  "workers_dev": true
+}
