@@ -35,6 +35,13 @@ Kaikissa tekstityökaluissa:
 - Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
 - Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API).
 
+## Käyttörajoitus ja merkinnät
+
+- Työkalukutsuja rajoitetaan Cloudflaren Rate Limiting -sidonnoilla: 30 kutsua minuutissa per MCP-istunto ja 300 per IP-osoite (Clauden pyynnöt tulevat Anthropicin palvelimilta, joten IP-raja on väljä). Rajan ylittyessä työkalu palauttaa virheilmoituksen eikä hae Finlexistä.
+- Istuntotunnus annetaan `initialize`-vastauksen `Mcp-Session-Id`-otsakkeessa. Sitä ei tallenneta mihinkään, se toimii vain rajoittimen avaimena.
+- Kaikilla työkaluilla on MCP-merkinnät `readOnlyHint: true` ja `destructiveHint: false`.
+- Yhden vastauksen enimmäispituus on 50 000 merkkiä (Claude rajaa työkalun vastauksen 25 000 tokeniin).
+
 ## Kehitys
 
 ```
