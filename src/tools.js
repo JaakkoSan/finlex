@@ -30,6 +30,7 @@ import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
 import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch } from "./eduskunta.js";
+import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
   decisionUrl,
@@ -260,6 +261,61 @@ export const TOOLS = [
       },
     },
   },
+  {
+    name: "hae_lainvalmisteluhankkeita",
+    description:
+      "Hakee ministeriöiden lainvalmistelu- ja muita hankkeita valtioneuvoston Hankeikkunasta: hakusana, ministeriö, tila, valmisteluvaihe, hallituksen esitys tai asetus, asettamispäivä. lausuntokierros_auki: true listaa hankkeet, joiden lausuntokierros on nyt käynnissä, määräajan mukaan. Palauttaa hanketunnukset (esim. STM006:00/2020), vaiheen, lausuntokierrokset ja HE-numerot. Lähde: Hankeikkunan avoin rajapinta.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana hankkeen nimestä tai kuvauksesta, esim. \"kotihoito\" tai \"vanhuspalvelulaki\". Valinnainen." },
+        ministerio: { type: "string", description: "Asettanut ministeriö lyhenteenä (STM, OM, VM, TEM, ...) tai nimellä. Valinnainen." },
+        tyyppi: { type: "string", enum: ["lainsaadanto", "hanke", "toimielin", "strategia", "kaikki"], description: "lainsaadanto (oletus) = lainvalmistelu (HE, asetukset); hanke = muut hankkeet ja selvitykset; toimielin = työryhmät, neuvottelukunnat; strategia; kaikki." },
+        laji: { type: "string", enum: ["he", "asetus"], description: "Lainsäädäntöhankkeista vain hallituksen esityksen valmistelu (he) tai asetuksen antaminen (asetus). Valinnainen." },
+        tila: { type: "string", enum: ["suunnitteilla", "kaynnissa", "paattynyt"], description: "Hankkeen tila. Valinnainen." },
+        vaihe: {
+          type: "string",
+          enum: ["esivalmistelu", "perusvalmistelu", "lausuntomenettely", "jatkovalmistelu", "valtioneuvoston_paatoksenteko", "eduskuntakasittely", "lain_vahvistaminen", "valmistunut", "keskeytetty"],
+          description: "Lainvalmistelun vaihe. Valinnainen.",
+        },
+        lausuntokierros_auki: { type: "boolean", description: "true = vain hankkeet, joiden lausuntokierros on käynnissä tänään, lähin määräaika ensin." },
+        alkaen: { type: "string", description: "Asetettu aikaisintaan (vvvv-kk-pp). Valinnainen." },
+        paattyen: { type: "string", description: "Asetettu viimeistään (vvvv-kk-pp). Valinnainen." },
+        jarjestys: { type: "string", enum: ["osuvuus", "muokattu", "asetettu"], description: "osuvuus (oletus hakusanalla), muokattu (oletus ilman hakusanaa) tai asetettu (uusin ensin)." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 hanketta." },
+      },
+    },
+  },
+  {
+    name: "lainvalmisteluhanke",
+    description:
+      "Palauttaa ministeriön lainvalmistelu- tai muun hankkeen tiedot Hankeikkunasta: tila ja valmisteluvaihe, tiivistelmä, tavoitteet, hallituksen esityksen tiedot (HE-numero, esittelyviikko HE-luettelossa, vastuuministeri, säädösnumerot), vaiheet ja lausuntokierrokset määräaikoineen, linkit lausuntopalveluun sekä asiakirjat (lausuntopyynnöt, luonnokset, muistiot, lausunnot laatijoittain). Hankkeen voi antaa tunnuksella tai hallituksen esityksen numerolla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hanke: { type: "string", description: "Hanketunnus (esim. \"STM006:00/2020\") tai hallituksen esitys (esim. \"HE 231/2021\")." },
+        asiakirjatyyppi: { type: "string", description: "Listaa vain tämän tyypin asiakirjat, esim. \"lausunto\", \"lausuntopyynto\", \"muistio\", \"yhteenveto\" tai \"kaikki\". Oletus: muut kuin lausunnot; lausunnoista määrä ja laatijat." },
+        laatija: { type: "string", description: "Listaa asiakirjat, joiden laatijan nimessä on tämä teksti, esim. \"Kymenlaakso\" tai \"Kuntaliitto\". Valinnainen." },
+        sivu: { type: "integer", description: "Asiakirjaluettelon sivu (100 asiakirjaa sivulla). Valinnainen." },
+      },
+      required: ["hanke"],
+    },
+  },
+  {
+    name: "lainvalmistelun_asiakirja",
+    description:
+      "Palauttaa Hankeikkunan hankkeen asiakirjan tekstin (PDF tai Word): esimerkiksi lausuntopyynnön ja esitysluonnoksen, muistion, lausuntoyhteenvedon tai yksittäisen lausunnon. Asiakirja annetaan numerolla lainvalmisteluhanke-työkalun luettelosta. Pitkä teksti jaetaan osiin (osa-parametri); hakusanalla palautetaan osumat ympäröivine teksteineen.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hanke: { type: "string", description: "Hanketunnus, esim. \"STM006:00/2020\", tai hallituksen esitys (\"HE 231/2021\")." },
+        asiakirja: { type: "integer", description: "Asiakirjan numero lainvalmisteluhanke-työkalun luettelosta." },
+        hakusana: { type: "string", description: "Etsittävä merkkijono (kirjainkoolla ei väliä). Valinnainen." },
+        osa: { type: "integer", description: "Tekstin osa, 1 = alku (40 000 merkkiä osassa). Valinnainen." },
+      },
+      required: ["hanke", "asiakirja"],
+    },
+  },
 ];
 
 // Työkalujen merkinnät (MCP tool annotations): kaikki työkalut vain lukevat
@@ -277,6 +333,9 @@ const TITLES = {
   eduskuntakasittely: "Eduskuntakäsittely",
   eduskunnan_asiakirja: "Eduskunnan asiakirja",
   hae_eduskunnan_asiakirjoja: "Hae eduskunnan asiakirjoja",
+  hae_lainvalmisteluhankkeita: "Hae lainvalmisteluhankkeita",
+  lainvalmisteluhanke: "Lainvalmisteluhanke",
+  lainvalmistelun_asiakirja: "Lainvalmistelun asiakirja",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -875,6 +934,7 @@ async function hallituksenEsitys(args) {
     out.push("");
   }
   out.push(`Eduskuntakäsittely (mietintö, lausunnot, muutokset): eduskuntakasittely-työkalulla, asia "HE ${s.number}/${s.year} vp".`);
+  out.push(`Valmistelu ministeriössä (lausuntokierros, lausunnot): lainvalmisteluhanke-työkalulla, hanke "HE ${s.number}/${s.year}".`);
   return clip(out.join("\n").trimEnd());
 }
 
@@ -1454,6 +1514,416 @@ async function haeRatkaisu(args) {
   return clip(lines.join("\n"));
 }
 
+// ---------- Lainvalmistelu (Hankeikkuna) ----------
+
+const HK_TYPES = { lainsaadanto: ["LAINSAADANTO"], hanke: ["HANKE"], toimielin: ["TOIMIELIN"], strategia: ["STRATEGIA"], kaikki: null };
+const HK_TILA = { suunnitteilla: "SUUNNITTEILLA", kaynnissa: "KAYNNISSA", paattynyt: "PAATTYNYT" };
+const HK_TILA_FI = { SUUNNITTEILLA: "suunnitteilla", KAYNNISSA: "käynnissä", PAATTYNYT: "päättynyt" };
+const HK_VAIHE_FI = {
+  ESIVALMISTELU: "esivalmistelu",
+  PERUSVALMISTELU: "perusvalmistelu",
+  LAUSUNTOMENETTELY: "lausuntomenettely",
+  JATKOVALMISTELU: "jatkovalmistelu",
+  VALTIONEUVOSTON_PAATOKSENTEKO: "valtioneuvoston päätöksenteko",
+  EDUSKUNTAKASITTELY: "eduskuntakäsittely",
+  LAIN_VAHVISTAMINEN: "lain vahvistaminen",
+  VALMISTUNUT: "valmistunut",
+  KESKEYTETTY: "keskeytetty",
+};
+const HK_LUOKKA_FI = {
+  HALLITUKSEN_ESITYKSEN_VALMISTELU: "hallituksen esityksen valmistelu",
+  ASETUKSEN_ANTAMINEN: "asetuksen antaminen",
+  TALOUSARVIOT: "talousarvio",
+  VALTION_LAINANOTTO_JA_ANTO: "valtion lainanotto ja -anto",
+  VALTIONTAKAUKSET: "valtiontakaukset",
+};
+const HK_TYYPPI_FI = { LAINSAADANTO: "lainsäädäntöhanke", HANKE: "hanke", TOIMIELIN: "toimielin", STRATEGIA: "strategia" };
+const HK_ETAPPI_FI = {
+  LAUSUNTOKIERROS: "Lausuntokierros",
+  KUULEMISTILAISUUS: "Kuulemistilaisuus",
+  TYORYHMA: "Työryhmä",
+  SAADOS: "Säädös",
+  LINJAUSPAATOS: "Linjauspäätös",
+  KOKOUS: "Kokous",
+  RAPORTOINTI: "Raportointi",
+  VALIRAPORTOINTI: "Väliraportointi",
+  TIEDOTUSTILAISUUS: "Tiedotustilaisuus",
+  VERKKOKESKUSTELU: "Verkkokeskustelu",
+  HANKINTA: "Hankinta",
+  BUDJETTIPAATOS: "Budjettipäätös",
+  KOULUTUS: "Koulutus",
+  MUU: "Vaihe",
+};
+const HK_DOC_FI = {
+  LAUSUNTO: "lausunto",
+  LAUSUNTOPYYNTO: "lausuntopyyntö",
+  KIRJE: "kirje",
+  POYTAKIRJA: "pöytäkirja",
+  MUISTIO: "muistio",
+  ASETTAMISPAATOS: "asettamispäätös",
+  YHTEENVETO: "yhteenveto",
+  PAATOS: "päätös",
+  LIITE: "liite",
+  ESITYS: "esitys",
+  RAPORTTI: "raportti",
+  SUUNNITELMA: "suunnitelma",
+  MIETINTO: "mietintö",
+  JULKAISU: "julkaisu",
+  KUTSU: "kutsu",
+  KANNANOTTO: "kannanotto",
+};
+const HK_SOURCE = "Hankeikkuna, valtioneuvosto, CC BY 4.0";
+const HK_TEXT_CHUNK = 40_000;
+
+// Suomen päivämäärä (EU:n kesäaika: maaliskuun viimeisestä sunnuntaista lokakuun viimeiseen klo 1 UTC).
+function finnishToday() {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const lastSunday = (m) => {
+    const d = new Date(Date.UTC(y, m + 1, 0, 1));
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    return d.getTime();
+  };
+  const dst = now.getTime() >= lastSunday(2) && now.getTime() < lastSunday(9);
+  return new Date(now.getTime() + (dst ? 3 : 2) * 3600_000).toISOString().slice(0, 10);
+}
+
+function addDays(iso, n) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function asIsoDate(v, what) {
+  if (v === undefined || v === null || v === "") return null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  throw new UserError(`Anna ${what} muodossa vvvv-kk-pp, esim. 2026-01-31.`);
+}
+
+function dateRange(a, l) {
+  if (a && l) {
+    const [ya, ma, da] = a.split("-");
+    const [yl, ml, dl] = l.split("-");
+    return ya === yl ? `${+da}.${+ma}.–${+dl}.${+ml}.${yl}` : `${fmtDate(a)}–${fmtDate(l)}`;
+  }
+  if (a) return `alkaen ${fmtDate(a)}`;
+  if (l) return `päättyy ${fmtDate(l)}`;
+  return "";
+}
+
+function etappiStatus(e, today) {
+  if (e.l && e.l < today) return "päättynyt";
+  if (e.a && e.a > today) return "tulossa";
+  return "käynnissä";
+}
+
+async function ministryUuids(v) {
+  const q = String(v).trim().toLowerCase();
+  const list = await asettajat();
+  const hits = list.filter((a) => (a.lyhenne ?? "").toLowerCase() === q);
+  const byName = hits.length ? hits : list.filter((a) => (a.nimi ?? "").toLowerCase().includes(q));
+  if (!byName.length) throw new UserError(`Ministeriötä "${v}" ei tunnistettu. Vaihtoehdot: ${[...new Set(list.filter((a) => a.aktiivinen).map((a) => a.lyhenne))].join(", ")}.`);
+  return byName.map((a) => a.uuid);
+}
+
+async function ministryLabel(uuid) {
+  if (!uuid) return null;
+  const a = (await asettajat()).find((x) => x.uuid === uuid);
+  return a ? (a.lyhenne ?? a.nimi) : null;
+}
+
+function rowStatus(r) {
+  const parts = [];
+  if (r.tila) parts.push(HK_TILA_FI[r.tila] ?? r.tila.toLowerCase());
+  if (r.vaihe) parts.push(`vaihe: ${HK_VAIHE_FI[r.vaihe] ?? r.vaihe.toLowerCase()}`);
+  return parts;
+}
+
+function heTilaText(h) {
+  if (!h?.kuvaus) return null;
+  const week = h.viikko && h.vuosi ? `, esittely vko ${h.viikko}/${h.vuosi}` : "";
+  return `${h.kuvaus}${h.tila === "ANNETTU_EK" ? "" : week}`;
+}
+
+async function haeLainvalmisteluhankkeita(args) {
+  const page = Number.isInteger(args.sivu) && args.sivu > 0 ? args.sivu : 1;
+  if (page > 20) throw new UserError("Sivuja voi selata enintään 20. Rajaa hakua.");
+  const form = {};
+  const hakusana = String(args.hakusana ?? "").trim();
+  if (hakusana) form.teksti = hakusana;
+  const tyyppiKey = args.tyyppi ?? "lainsaadanto";
+  if (!(tyyppiKey in HK_TYPES)) throw new UserError("tyyppi: lainsaadanto, hanke, toimielin, strategia tai kaikki.");
+  if (HK_TYPES[tyyppiKey]) form.tyyppi = HK_TYPES[tyyppiKey];
+  if (args.laji === "he") form.lainsaadantoTehtavaluokka = ["HALLITUKSEN_ESITYKSEN_VALMISTELU"];
+  else if (args.laji === "asetus") form.lainsaadantoTehtavaluokka = ["ASETUKSEN_ANTAMINEN"];
+  if (args.tila) {
+    if (!HK_TILA[args.tila]) throw new UserError("tila: suunnitteilla, kaynnissa tai paattynyt.");
+    form.tila = [HK_TILA[args.tila]];
+  }
+  if (args.vaihe) {
+    const v = String(args.vaihe).toUpperCase();
+    if (!HK_VAIHE_FI[v]) throw new UserError(`vaihe: ${Object.keys(HK_VAIHE_FI).map((k) => k.toLowerCase()).join(", ")}.`);
+    form.valmisteluvaihe = [v];
+  }
+  if (args.ministerio) form.asettajaUuid = await ministryUuids(args.ministerio);
+  const alkaen = asIsoDate(args.alkaen, "alkaen");
+  const paattyen = asIsoDate(args.paattyen, "paattyen");
+  if (alkaen) form.asettamisPaivaAlku = alkaen;
+  if (paattyen) form.asettamisPaivaLoppu = paattyen;
+  const order = args.jarjestys ?? (hakusana ? "osuvuus" : "muokattu");
+  if (order === "muokattu") form.sort = [{ field: "kohde.muokattu", order: "DESC" }];
+  else if (order === "asetettu") form.sort = [{ field: "kohde.asettamisPaiva", order: "DESC" }];
+  else if (order !== "osuvuus") throw new UserError("jarjestys: osuvuus, muokattu tai asetettu.");
+
+  const today = finnishToday();
+  let total;
+  let rows;
+  const open = args.lausuntokierros_auki === true;
+  if (open) {
+    // Käynnissä olevat kierrokset alkoivat yleensä viimeisten kuukausien aikana; suodatus tehdään
+    // tässä, koska rajapinta ei rajaa päättymispäivällä.
+    form.etappiTyyppi = ["LAUSUNTOKIERROS"];
+    form.etappiAlkamisPaivaAlku = addDays(today, -180);
+    if (!form.tila) form.tila = ["KAYNNISSA", "SUUNNITTEILLA"];
+    form.sort = [{ field: "kohde.muokattu", order: "DESC" }];
+    const res = await searchProjects(form, 300);
+    const withRound = [];
+    for (const r of res.rows) {
+      const cur = r.lk.filter((e) => e.l && e.l >= today && (!e.a || e.a <= today)).sort((a, b) => cmpStr(a.l, b.l))[0];
+      if (cur) withRound.push({ ...r, cur });
+    }
+    withRound.sort((a, b) => cmpStr(a.cur.l, b.cur.l) || cmpStr(a.tunnus ?? "", b.tunnus ?? ""));
+    total = withRound.length;
+    rows = withRound.slice((page - 1) * 10, page * 10);
+  } else {
+    const res = await searchProjects(form, page * 10);
+    total = res.total;
+    rows = res.rows.slice((page - 1) * 10, page * 10);
+  }
+
+  const crit = [];
+  if (hakusana) crit.push(`hakusana "${hakusana}"`);
+  if (args.ministerio) crit.push(`ministeriö ${args.ministerio}`);
+  if (args.laji) crit.push(args.laji === "he" ? "hallituksen esitykset" : "asetukset");
+  if (args.vaihe) crit.push(`vaihe ${HK_VAIHE_FI[String(args.vaihe).toUpperCase()]}`);
+  if (args.tila) crit.push(HK_TILA_FI[HK_TILA[args.tila]]);
+  if (alkaen || paattyen) crit.push(`asetettu ${dateRange(alkaen, paattyen)}`);
+  if (open) crit.push(`lausuntokierros käynnissä ${fmtDate(today)}`);
+  const head = `Hankeikkunan hankkeet${crit.length ? ` (${crit.join(", ")})` : ""}: ${total} osumaa, sivu ${page}${open ? ", lähin määräaika ensin" : order === "osuvuus" ? ", osuvin ensin" : order === "asetettu" ? ", uusin ensin" : ", viimeksi muokattu ensin"}.`;
+  if (!rows.length) return `${head}\n\nEi tuloksia${page > 1 ? " tällä sivulla" : ""}. Kokeile toista hakusanaa tai väljempiä ehtoja.`;
+  const out = [head, ""];
+  for (const r of rows) {
+    const min = await ministryLabel(r.asettaja);
+    const status = rowStatus(r);
+    out.push(`${r.tunnus} ${r.nimi ?? "(nimetön hanke)"}${[min, ...status].filter(Boolean).length ? ` (${[min, ...status].filter(Boolean).join(", ")})` : ""}`);
+    const det = [];
+    if (r.lain?.luokka) det.push(HK_LUOKKA_FI[r.lain.luokka] ?? r.lain.luokka.toLowerCase());
+    if (r.lain?.he?.length) det.push(r.lain.he.join(", "));
+    const ht = heTilaText(r.lain?.heTila);
+    if (ht && !r.lain?.he?.length) det.push(ht);
+    if (open) det.push(`lausuntokierros ${dateRange(r.cur.a, r.cur.l)}`);
+    else {
+      const lk = r.lk.filter((e) => e.a || e.l).sort((a, b) => cmpStr(b.a ?? "", a.a ?? ""))[0];
+      if (lk) det.push(`lausuntokierros ${dateRange(lk.a, lk.l)} (${etappiStatus(lk, today)})`);
+    }
+    if (r.asetettu) det.push(`asetettu ${fmtDate(r.asetettu)}`);
+    if (det.length) out.push(`  ${det.join(" | ")}`);
+  }
+  if (total > page * 10) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  out.push("", `Hankkeen tiedot ja asiakirjat: lainvalmisteluhanke-työkalulla (hanke: tunnus). Lähde: ${HK_SOURCE}.`);
+  return clip(out.join("\n"));
+}
+
+const cmpStr = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+async function loadProject(v) {
+  const s = String(v ?? "").trim();
+  const m = s.match(/^HE\s*(\d{1,4})\s*\/\s*(\d{4})(?:\s*vp)?$/i);
+  if (m) {
+    const he = `HE ${+m[1]}/${m[2]}`;
+    const tunnukset = await projectsForProposal(he);
+    if (!tunnukset.length) throw new UserError(`Hallituksen esitykselle ${he} ei löytynyt valmisteluhanketta Hankeikkunasta. Kaikkia esityksiä ei ole liitetty hankkeeseen; kokeile hae_lainvalmisteluhankkeita-työkalua hakusanalla.`);
+    const p = await projectByTunnus(tunnukset[0]);
+    if (!p) throw new UserError(`Hanketta ${tunnukset[0]} ei saatu Hankeikkunasta.`);
+    return { p, others: tunnukset.slice(1) };
+  }
+  const t = s.toUpperCase().replace(/\s+/g, "");
+  if (!/^[A-ZÅÄÖ]{2,4}\d{1,4}:\d{2}\/\d{4}$/.test(t)) throw new UserError('Anna hanke tunnuksena, esim. "STM006:00/2020", tai hallituksen esityksenä, esim. "HE 231/2021".');
+  const p = await projectByTunnus(t);
+  if (!p) throw new UserError(`Hanketta ${t} ei löytynyt Hankeikkunasta.`);
+  return { p, others: [] };
+}
+
+function docLine(d, i) {
+  const bits = [HK_DOC_FI[d.t] ?? (d.t ? d.t.toLowerCase() : "asiakirja")];
+  if (d.d) bits.push(fmtDate(d.d));
+  const name = d.n && d.n.toLowerCase() !== (HK_DOC_FI[d.t] ?? "") ? d.n : null;
+  const who = d.l ? ` – ${d.l}` : "";
+  const file = d.u ? (docKind(d) ? "" : " (tiedosto, tekstiä ei pureta)") : " (vain viitetiedot)";
+  return `${i}. ${name ?? bits[0]}${who} (${bits.join(", ")})${file}`;
+}
+
+async function lainvalmisteluhanke(args) {
+  const { p, others } = await loadProject(args.hanke);
+  const today = finnishToday();
+  const min = await ministryLabel(p.asettaja);
+  const out = [`${p.tunnus} ${p.nimi ?? "(nimetön hanke)"}`];
+  const info = [HK_TYYPPI_FI[p.tyyppi] ?? p.tyyppi, min, ...rowStatus(p)].filter(Boolean);
+  out.push(info.join(", ") + ".");
+  const dates = [];
+  if (p.asetettu) dates.push(`asetettu ${fmtDate(p.asetettu)}`);
+  if (p.aloitus && p.aloitus !== p.asetettu) dates.push(`alkanut ${fmtDate(p.aloitus)}`);
+  if (p.valmistuminen) dates.push(`${p.valmistuminen < today ? "valmistunut" : "valmistuu"} ${fmtDate(p.valmistuminen)}`);
+  if (dates.length) out.push(dates.join(", ").replace(/^./, (c) => c.toUpperCase()) + ".");
+  out.push(`Lähde: ${projectWebUrl(p.tunnus)} (${HK_SOURCE})`);
+  if (others.length) out.push(`Samaan esitykseen liittyy myös: ${others.join(", ")}.`);
+
+  const showDocsOnly = args.asiakirjatyyppi || args.laatija || args.sivu;
+  if (!showDocsOnly) {
+    const l = p.lain;
+    if (l) {
+      const rows = [];
+      if (l.luokka) rows.push(`Tehtävä: ${HK_LUOKKA_FI[l.luokka] ?? l.luokka.toLowerCase()}`);
+      if (l.otsikko) rows.push(`Esityksen otsikko: ${l.otsikko}`);
+      if (l.he.length) rows.push(`Hallituksen esitys: ${l.he.join(", ")} (teksti hallituksen_esitys-työkalulla, käsittely eduskuntakasittely-työkalulla)`);
+      const ht = heTilaText(l.heTila);
+      if (ht) rows.push(`HE-luettelo: ${ht}`);
+      if (l.ministeri) rows.push(`Vastuuministeri: ${l.ministeri}`);
+      if (l.sisalto) rows.push(`Sisältö: ${l.sisalto}`);
+      if (l.pev === "KYLLA") rows.push("Perustuslakivaliokunnan lausunto arvioitu tarpeelliseksi.");
+      if (l.kiire) rows.push("Merkitty kiireelliseksi.");
+      if (l.lan) rows.push("Lainsäädännön arviointineuvosto arvioi esitysluonnoksen.");
+      if (l.ev.length) rows.push(`Eduskunnan vastaus: ${l.ev.join(", ")}`);
+      if (l.sk.length) rows.push(`Säädökset: ${l.sk.join(", ")} (teksti saados_tiedot- tai hae_pykala-työkalulla)`);
+      if (l.rauennut) rows.push("Esitys on rauennut.");
+      if (rows.length) out.push("", ...rows);
+    }
+    for (const [label, text] of [["Tiivistelmä", p.tiivistelma], ["Tavoitteet", p.tavoitteet], ["Tilanne", p.tilanne], ["Vaikutukset", p.vaikutukset], ["Kuvaus", p.kuvaus]]) {
+      if (text) out.push("", `${label}:`, text.length > 3000 ? `${text.slice(0, 3000)} …` : text);
+    }
+    if (p.etapit.length) {
+      out.push("", "Vaiheet:");
+      for (const e of p.etapit) {
+        const range = dateRange(e.a, e.l);
+        const st = e.t === "LAUSUNTOKIERROS" || e.l ? ` (${etappiStatus(e, today)})` : "";
+        const name = e.n && e.n !== HK_ETAPPI_FI[e.t] ? `: ${e.n}` : "";
+        out.push(`- ${HK_ETAPPI_FI[e.t] ?? e.t ?? "Vaihe"}${name}${range ? `, ${range}` : ""}${st}`);
+        const links = p.linkit.filter((x) => x.e && x.e === e.id);
+        for (const x of links) out.push(`  ${x.n ?? "Linkki"}: ${x.u}`);
+      }
+    }
+    const loose = p.linkit.filter((x) => !x.e || !p.etapit.some((e) => e.id === x.e));
+    if (loose.length) {
+      out.push("", "Linkit:");
+      for (const x of loose) out.push(`- ${x.n ?? "Linkki"}: ${x.u}`);
+    }
+  }
+
+  // Asiakirjat numeroituina (numero = järjestys koko luettelossa).
+  const numbered = p.docs.map((d, i) => ({ d, i: i + 1 }));
+  let list;
+  let title;
+  if (showDocsOnly) {
+    let sel = numbered;
+    const tq = String(args.asiakirjatyyppi ?? "").trim().toLowerCase();
+    if (tq && tq !== "kaikki") {
+      const norm = (x) => x.replace(/ä/g, "a").replace(/ö/g, "o");
+      sel = sel.filter(({ d }) => norm((d.t ?? "").toLowerCase()) === norm(tq) || norm(HK_DOC_FI[d.t] ?? "") === norm(tq));
+    }
+    const lq = String(args.laatija ?? "").trim().toLowerCase();
+    if (lq) sel = sel.filter(({ d }) => (d.l ?? "").toLowerCase().includes(lq) || (d.n ?? "").toLowerCase().includes(lq));
+    const page = Number.isInteger(args.sivu) && args.sivu > 0 ? args.sivu : 1;
+    list = sel.slice((page - 1) * 100, page * 100);
+    title = `Asiakirjat${tq ? ` (${tq})` : ""}${lq ? ` (laatija "${args.laatija}")` : ""}: ${sel.length} kpl${sel.length > 100 ? `, sivu ${page}` : ""}`;
+    if (sel.length > page * 100) title += `; lisää: sivu ${page + 1}`;
+  } else {
+    list = numbered.filter(({ d }) => d.t !== "LAUSUNTO");
+    title = `Asiakirjat (${p.docs.length} kpl${list.length < p.docs.length ? "; lausunnot erikseen alla" : ""})`;
+    if (list.length > 60) {
+      title += `; näytetään 60 viimeisintä, kaikki: asiakirjatyyppi "kaikki"`;
+      list = list.slice(-60);
+    }
+  }
+  if (p.docs.length) {
+    out.push("", `${title}:`);
+    for (const { d, i } of list) out.push(docLine(d, i));
+    if (!showDocsOnly) {
+      const statements = numbered.filter(({ d }) => d.t === "LAUSUNTO");
+      if (statements.length) {
+        const names = [...new Set(statements.map(({ d }) => d.l).filter(Boolean))];
+        out.push("", `Lausunnot: ${statements.length} kpl${names.length ? `, laatijoita ${names.length}` : ""}. Luettelo: asiakirjatyyppi "lausunto"; tietyn tahon lausunto: laatija-parametrilla.`);
+        if (names.length) out.push(`Laatijoita: ${names.slice(0, 40).join("; ")}${names.length > 40 ? " …" : ""}`);
+      }
+    }
+    out.push("", "Asiakirjan teksti: lainvalmistelun_asiakirja-työkalulla (hanke ja asiakirjan numero).");
+  } else {
+    out.push("", "Hankkeelle ei ole julkaistu asiakirjoja Hankeikkunassa.");
+  }
+  return clip(out.join("\n"));
+}
+
+async function lainvalmistelunAsiakirja(args) {
+  const { p } = await loadProject(args.hanke);
+  const n = Number(args.asiakirja);
+  if (!Number.isInteger(n) || n < 1 || n > p.docs.length) {
+    throw new UserError(p.docs.length ? `Asiakirjaa ${args.asiakirja} ei ole. Hankkeessa ${p.tunnus} on ${p.docs.length} asiakirjaa (luettelo lainvalmisteluhanke-työkalulla).` : `Hankkeessa ${p.tunnus} ei ole asiakirjoja.`);
+  }
+  const d = p.docs[n - 1];
+  const out = [`${p.tunnus} ${p.nimi ?? ""}`.trim(), `Asiakirja ${docLine(d, n).replace(/^\d+\.\s*/, "")}`];
+  if (d.g.length) out.push(`Ryhmä: ${d.g.join("; ")}`);
+  if (d.k) out.push(`Kuvaus: ${d.k}`);
+  if (d.u) out.push(`Tiedosto: ${d.u}`);
+  out.push(`Hanke: ${projectWebUrl(p.tunnus)} (${HK_SOURCE})`);
+  if (!d.u) {
+    out.push("", "Asiakirjasta on julkaistu vain viitetiedot, ei tiedostoa.");
+    return out.join("\n");
+  }
+  if (!docKind(d)) {
+    out.push("", `Tiedoston tekstiä ei pureta (tyyppi ${d.s ?? "tuntematon"}). Avaa tiedosto linkistä.`);
+    return out.join("\n");
+  }
+  const t = await docText(d);
+  if (!t?.text) {
+    out.push("", "Tiedostosta ei saatu tekstiä (esimerkiksi skannattu PDF ilman tekstikerrosta). Avaa tiedosto linkistä.");
+    return out.join("\n");
+  }
+  const text = t.text;
+  const parts = Math.max(1, Math.ceil(text.length / HK_TEXT_CHUNK));
+  out.push(`Teksti: ${fmtCount(text.length)} merkkiä${t.pages ? `, ${t.pages} sivua` : ""}, purettu automaattisesti (muotoilu voi poiketa alkuperäisestä).`);
+
+  const q = String(args.hakusana ?? "").trim();
+  if (q) {
+    const low = text.toLowerCase();
+    const needle = q.toLowerCase();
+    const hits = [];
+    for (let i = low.indexOf(needle); i >= 0 && hits.length < 30; i = low.indexOf(needle, i + needle.length)) hits.push(i);
+    if (!hits.length) {
+      out.push("", `Hakusanaa "${q}" ei löytynyt. Kokeile sanan vartaloa.`);
+      return out.join("\n");
+    }
+    out.push("", `Osumat hakusanalle "${q}" (${hits.length}${hits.length === 30 ? "+" : ""}; suluissa tekstin osa):`);
+    let lastEnd = -1;
+    for (const i of hits) {
+      const s = Math.max(0, i - 400);
+      const e = Math.min(text.length, i + needle.length + 400);
+      if (s < lastEnd) continue; // päällekkäinen osuma näkyy jo edellisessä
+      lastEnd = e;
+      out.push("", `[osa ${Math.floor(i / HK_TEXT_CHUNK) + 1}] …${text.slice(s, e).replace(/\n+/g, " ")}…`);
+    }
+    return clip(out.join("\n"));
+  }
+  const k = Number.isInteger(args.osa) && args.osa > 0 ? args.osa : 1;
+  if (k > parts) throw new UserError(`Tekstissä on ${parts} osaa.`);
+  if (parts > 1) out.push(`Osa ${k}/${parts}${k < parts ? ` (seuraava: osa ${k + 1})` : ""}.`);
+  out.push("");
+  out.push(text.slice((k - 1) * HK_TEXT_CHUNK, k * HK_TEXT_CHUNK));
+  return clip(out.join("\n"));
+}
+
 const HANDLERS = {
   hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
@@ -1467,6 +1937,9 @@ const HANDLERS = {
   eduskuntakasittely: eduskuntakasittely,
   eduskunnan_asiakirja: eduskunnanAsiakirja,
   hae_eduskunnan_asiakirjoja: haeEduskunnanAsiakirjoja,
+  hae_lainvalmisteluhankkeita: haeLainvalmisteluhankkeita,
+  lainvalmisteluhanke: lainvalmisteluhanke,
+  lainvalmistelun_asiakirja: lainvalmistelunAsiakirja,
 };
 
 export async function callTool(name, args = {}) {
@@ -1481,6 +1954,8 @@ export async function callTool(name, args = {}) {
         ? e.message
         : e instanceof EduskuntaError
           ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof HankeikkunaError
+          ? `Hankeikkunan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof FinlexError
           ? `Finlex-haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : `Odottamaton virhe: ${e?.message ?? e}`;

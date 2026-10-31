@@ -1,6 +1,6 @@
 # PROJECT.md: finlex-mcp
 
-Oma Claude-liitin Finlexin säädösteksteille ja lakien eduskuntakäsittelylle. Tehty 31.10.2026.
+Oma Claude-liitin Finlexin säädösteksteille, lakien valmistelulle ministeriöissä ja eduskuntakäsittelylle. Tehty 31.10.2026.
 
 ## Miksi oma
 
@@ -24,6 +24,7 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/finlex.js`: Finlex-rajapinnan asiakas ja välimuisti
 - `src/decisions.js`: viranomaisratkaisut (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) ja PDF-tekstin purku
 - `src/eduskunta.js`: Eduskunnan avoimen datan rajapinnan asiakas (api.eduskunta.fi), tunnusten normalisointi
+- `src/hankeikkuna.js`: valtioneuvoston Hankeikkunan rajapinnan asiakas (api.hankeikkuna.fi), hakutulosten tiivistys, asiakirjojen tekstin purku (PDF, DOCX)
 - `src/edkDoc.js`: eduskunnan asiakirjan (mietintö, lausunto, eduskunnan vastaus) HTML:n jäsennys lohkoiksi ja pykälähakemistoksi
 - `src/xml.js`: pieni XML-jäsennin
 - `test/smoke.mjs`: savutesti oikeaa Finlexiä vasten
@@ -43,3 +44,4 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - 31.10.2026 v1.4: hallituksen esitykset (hae_hallituksen_esityksia, hallituksen_esitys, etsi_hallituksen_esityksesta) Finlexin avoimesta datasta. Lähde valittu Finlexistä eduskunnan avoimen datan sijaan, koska Finlexissä esitykset ovat samassa Akoma Ntoso -muodossa kuin säädökset.
 - 31.10.2026 v1.5: eduskuntakäsittely (eduskuntakasittely, eduskunnan_asiakirja, hae_eduskunnan_asiakirjoja) Eduskunnan avoimesta datasta (api.eduskunta.fi, CC BY 4.0). Uusi rajapinta valittu, koska vanhasta (avoindata.eduskunta.fi) luovutaan vuoden 2026 lopussa (eduskunta.fi, avoin data, luettu 31.10.2026). Asiakirjat luetaan HTML-muodossa, koska se on saatavilla myös vuosien 1999–2014 asiakirjoista, joista XML:ää ei ole. hallituksen_esitys-yleiskuvassa viittaus eduskuntakäsittelyyn.
 - 31.10.2026 v1.5.1: eduskuntakasittely näyttää käsittelyn vaiheet päivämäärineen (päävaiheet, kaikki parametrilla kaikki_vaiheet). Vaiheet jätettiin v1.5:ssä pois ilmaistason 10 ms:n CPU-rajan takia; Workers Paid -tilauksella raja on 30 s.
+- 31.10.2026 v1.6: lainvalmistelu ministeriöissä (hae_lainvalmisteluhankkeita, lainvalmisteluhanke, lainvalmistelun_asiakirja) valtioneuvoston Hankeikkunan julkisesta rajapinnasta (api.hankeikkuna.fi, CC BY 4.0, rajapintakuvauksen lisenssitieto luettu 31.10.2026). Hankkeen voi hakea myös HE-numerolla, ja hallituksen_esitys-yleiskuvassa on viittaus valmisteluun. Lausuntopalvelu.fi:lle ei löytynyt avointa rajapintaa; Hankeikkunassa ovat lausuntokierrosten päivämäärät, linkit lausuntopalveluun ja lausunnot asiakirjoina. Word-tiedostot puretaan omalla ZIP-lukijalla (DecompressionStream), joten uusia riippuvuuksia ei tullut.

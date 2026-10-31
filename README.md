@@ -1,6 +1,6 @@
 # finlex-mcp
 
-Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta sekä lakien eduskuntakäsittelyn (valiokuntien mietinnöt ja lausunnot, eduskunnan vastaukset) Eduskunnan avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
+Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta, lakien valmistelun ministeriöissä (hankkeet, lausuntokierrokset, lausunnot) valtioneuvoston Hankeikkunasta sekä lakien eduskuntakäsittelyn (valiokuntien mietinnöt ja lausunnot, eduskunnan vastaukset) Eduskunnan avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
 
 ## Työkalut
 
@@ -13,6 +13,9 @@ Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin,
 | `hae_hallituksen_esityksia` | Hallituksen esitysten haku otsikon osalla ja vuosilla |
 | `hallituksen_esitys` | Esityksen pääasiallinen sisältö ja perustelujen sisällysluettelo; lisäksi yksi perustelujen lohko, pykälän säännöskohtaiset perustelut, lakiehdotuksen tai liitteen teksti |
 | `etsi_hallituksen_esityksesta` | Sanahaku yhden esityksen tekstistä, palauttaa lohkot ja otteet |
+| `hae_lainvalmisteluhankkeita` | Ministeriöiden lainvalmistelu- ja muiden hankkeiden haku hakusanalla, ministeriöllä, tilalla, vaiheella ja asettamispäivällä; käynnissä olevat lausuntokierrokset määräajan mukaan |
+| `lainvalmisteluhanke` | Hankkeen tila ja valmisteluvaihe, tiivistelmä, HE-tiedot (HE-luettelo, vastuuministeri, säädösnumerot), vaiheet ja lausuntokierrokset, linkit lausuntopalveluun ja numeroitu asiakirjaluettelo (lausunnot laatijoittain); myös HE-numerolla |
+| `lainvalmistelun_asiakirja` | Hankkeen asiakirjan teksti (PDF tai Word) osina tai hakusanan osumat |
 | `eduskuntakasittely` | Asian (esim. HE) käsittely eduskunnassa: tila ja lopputulos, mietintö, lausunnot, eduskunnan vastaus, lakiehdotusten päätökset ja säädösnumerot |
 | `eduskunnan_asiakirja` | Mietinnön, lausunnon tai eduskunnan vastauksen sisällys ja päätösosa; lisäksi pykälän perustelut ja ehdotettu tai hyväksytty sanamuoto, yksi lohko tai sanahaku |
 | `hae_eduskunnan_asiakirjoja` | Mietintöjen, lausuntojen ja eduskunnan vastausten haku tekstin sanalla, valiokunnalla ja vuosilla |
@@ -40,6 +43,7 @@ Kaikissa tekstityökaluissa:
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
 - Hallituksen esitykset: `/akn/fi/doc/government-proposal/{vuosi}/{numero}/fin@` (välimuisti 30 vrk)
 - Eduskunnan asiakirjat: `https://api.eduskunta.fi/api/v1` (Eduskunnan avoin data, OpenAPI-kuvaus `https://api.eduskunta.fi/openapi.json`). Asia ja asiakirjan tunnistus haulla `POST /search` (`stringValue`-ehto tunnukselle), teksti `GET /asiakirjat/edktunnus/{edktunnus}/html`. Rajapinta sallii 180 GET- ja 90 POST-pyyntöä minuutissa IP-osoitetta kohden; vastaukset välimuistitetaan (asia 6 h, asiakirjan hakemisto 7 vrk).
+- Lainvalmistelu: `https://api.hankeikkuna.fi/api/v2` (valtioneuvoston Hankeikkunan julkinen rajapinta, CC BY 4.0, kuvaus `https://api.hankeikkuna.fi/api/api-docs`). Haku `POST /kohteet/haku`, ministeriöt `GET /asettajat`, asiakirjat `https://api.hankeikkuna.fi/asiakirjat/…`. Hakuvastaukset ovat suuria (hanke asiakirjaluetteloineen 30–400 kt), joten välimuistiin tallennetaan vain tiivistetyt tiedot (1 h) ja asiakirjojen purettu teksti (30 vrk). Hankesivun linkki `https://valtioneuvosto.fi/hanke?tunnus=…`.
 - Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
 - Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API). Säädös jäsennetään kerran, ja välimuistiin tallennetaan valmis hakemisto osina (perustiedot, hakuteksti, muotoillut pykälät), jotta kutsu pysyy Workersin ilmaistason CPU-rajan (10 ms) alla.
 
@@ -79,10 +83,14 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 - Eduskunnan asiakirjoista on tekstiä vuodesta 1999 alkaen; vanhemmista on rajapinnassa vain PDF. Vuodesta 2015 asiakirjat ovat Vaski-muodossa, jossa valiokunnan muutokset hallituksen esityksen tekstiin merkitään (`«…»`). Vanhemmista asiakirjoista rakenne tunnistetaan otsikoista.
 - Pykälän perustelut tunnistetaan valiokunnan yksityiskohtaisten perustelujen pykäläotsikoista ("51 a §. Otsikko."). Valiokunta käsittelee osaa pykälistä vain yleisperusteluissa.
 - Asian käsittelyn vaiheista näytetään oletuksena päävaiheet (vireilletulo, lähetekeskustelu, valiokuntien ratkaisut ja vastalauseet, mietintö ja lausunnot, täysistuntokäsittelyt, eduskunnan vastaus). Valiokuntien kokouskohtaiset vaiheet saa parametrilla `kaikki_vaiheet`; suurimmissa asioissa niitä on satoja.
+- Hankeikkunan asiakirjat numeroidaan luontiajan mukaan. Numero voi muuttua, jos hankkeeseen lisätään vanhempia asiakirjoja jälkikäteen, joten numero haetaan aina samasta luettelosta.
+- Hankeikkunan valmisteluvaihe ja vaiheiden tila ovat ministeriön kirjaamia, eivätkä ne ole aina ajan tasalla. Lausuntokierroksen tila (käynnissä, päättynyt, tulossa) lasketaan päivämääristä.
+- Asiakirjoista puretaan PDF ja Word (.docx). Vanhat Word- (.doc) ja RTF-tiedostot sekä skannatut PDF:t ilman tekstikerrosta näytetään vain linkkinä. Osasta asiakirjoja on julkaistu vain viitetiedot.
+- Käynnissä olevat lausuntokierrokset haetaan viimeisten 180 päivän aikana alkaneista kierroksista.
 - Eduskunnan asiakirjahaku vertaa sanoja sellaisinaan, joten taivutusmuoto vaikuttaa osumiin. Haku on hidas (useita sekunteja).
 
 ## Lisenssi
 
 Koodi: MIT, ks. [LICENSE](LICENSE).
 
-Data: Finlexin avoin data, oikeusministeriö, ja Eduskunnan avoin data, eduskunta, molemmat lisenssillä [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fi) (lähde on mainittava). Tämä ei ole oikeusministeriön, Finlexin tai eduskunnan palvelu.
+Data: Finlexin avoin data, oikeusministeriö; valtioneuvoston Hankeikkuna; ja Eduskunnan avoin data, eduskunta; kaikki lisenssillä [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.fi) (lähde on mainittava). Tämä ei ole oikeusministeriön, Finlexin, valtioneuvoston tai eduskunnan palvelu.

@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 12, "tools/list (12 työkalua)");
+check(list.result?.tools?.length === 15, "tools/list (15 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -59,6 +59,14 @@ const cases = [
   ["eduskunnan_asiakirja", { asiakirja: "EV 150/2022 vp", pykala: "55" }, (t) => t.includes("HYVÄKSYTTY LAKITEKSTI") && t.includes("Tietojen julkaiseminen")],
   ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp", hakusana: "perusoikeu" }, (t) => t.includes("Osumat")],
   ["hae_eduskunnan_asiakirjoja", { valiokunta: "perustuslakivaliokunta", tyyppi: "lausunto", alkaen_vuosi: 2022, paattyen_vuosi: 2022 }, (t) => t.includes("PeVL") && t.includes("2022 vp")],
+  ["hae_lainvalmisteluhankkeita", { hakusana: "kotihoito" }, (t) => t.includes("STM006:00/2020") && t.includes("HE 231/2021")],
+  ["hae_lainvalmisteluhankkeita", { lausuntokierros_auki: true }, (t) => t.includes("lähin määräaika ensin") && t.includes("lausuntokierros")],
+  ["hae_lainvalmisteluhankkeita", { ministerio: "STM", laji: "he", tila: "paattynyt" }, (t) => t.includes("STM") && t.includes("hallituksen esityksen valmistelu")],
+  ["lainvalmisteluhanke", { hanke: "HE 231/2021" }, (t) => t.includes("STM006:00/2020") && t.includes("Lausuntokierros") && t.includes("Lausunnot: ")],
+  ["lainvalmisteluhanke", { hanke: "STM006:00/2020", laatija: "Kymenlaakso" }, (t) => t.includes("Kymenlaakson sosiaali- ja terveyspalvelujen kuntayhtymä")],
+  ["lainvalmisteluhanke", { hanke: "HE 304/2010" }, (t) => t.includes("STM118:00/2010") && t.includes("EV 262/2010")],
+  ["lainvalmistelun_asiakirja", { hanke: "STM006:00/2020", asiakirja: 198 }, (t) => t.includes("Lausuntoyhteenveto") && t.includes("120 lausuntoa")],
+  ["lainvalmistelun_asiakirja", { hanke: "STM006:00/2020", asiakirja: 89, hakusana: "mitoitus" }, (t) => t.includes("Osumat") && t.includes("henkilöstömitoitus")],
   ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (t) => t.includes("numero") && t.includes("Tietosuojavaltuutettu")],
   ["hae_ratkaisuja", { lahde: "oikeusasiamies", otsikko: "kotihoito" }, (t) => t.includes("numero")],
   ["hae_ratkaisu", { lahde: "tietosuojavaltuutettu", vuosi: 2025, numero: "2443" }, (t) => t.includes("TSV/61/2021") && t.includes("Asia")],
