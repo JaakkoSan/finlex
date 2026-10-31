@@ -206,7 +206,7 @@ function paragraphsText(node) {
   return ps.map((p) => (p.name === "table" ? tableText(p) : textOf(p))).filter(Boolean);
 }
 
-function tableText(table) {
+export function tableText(table) {
   return findAll(table, "tr")
     .map((tr) =>
       elements(tr)

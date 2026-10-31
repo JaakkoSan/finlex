@@ -204,6 +204,20 @@ export function originalUrl(year, number, lang = "fin") {
   return `${API_BASE}/akn/fi/act/statute/${year}/${encodeURIComponent(number)}/${langVersion(lang, "")}`;
 }
 
+/** Hallituksen esitys (Akoma Ntoso -doc). */
+export function proposalUrl(year, number, lang = "fin") {
+  return `${API_BASE}/akn/fi/doc/government-proposal/${year}/${encodeURIComponent(number)}/${lang}@`;
+}
+
+/** Finlexin verkkosivu esitykselle (vain suomenkielinen osoite tiedossa). */
+export function proposalWebUrl(year, number) {
+  return `https://www.finlex.fi/fi/hallituksen-esitykset/${year}/${number}`;
+}
+
+export function docListUrl(docType, params) {
+  return listUrl(docType, params).replace("/akn/fi/act/", "/akn/fi/doc/");
+}
+
 export function listUrl(docType, params) {
   const q = new URLSearchParams({ format: "json" });
   for (const [k, v] of Object.entries(params)) {

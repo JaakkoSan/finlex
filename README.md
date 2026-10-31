@@ -1,6 +1,6 @@
 # finlex-mcp
 
-Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
+Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin, hallituksen esitykset ja viranomaisratkaisuja suoraan Finlexin avoimesta datasta. Toimii Cloudflare Workerina, ei tallenna mitään eikä tarvitse API-avaimia.
 
 ## Työkalut
 
@@ -10,6 +10,9 @@ Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin 
 | `saados_tiedot` | Perustiedot, voimassaolo, muutossäädökset voimaantulopäivineen, esityöt, sisällysluettelo |
 | `hae_pykala` | Pykälän tai koko luvun teksti momentteineen ja Finlexin huomautuksineen |
 | `etsi_saadoksesta` | Sanahaku yhden säädöksen tekstistä, palauttaa pykälät ja otteet |
+| `hae_hallituksen_esityksia` | Hallituksen esitysten haku otsikon osalla ja vuosilla |
+| `hallituksen_esitys` | Esityksen pääasiallinen sisältö ja perustelujen sisällysluettelo; lisäksi yksi perustelujen lohko, pykälän säännöskohtaiset perustelut, lakiehdotuksen tai liitteen teksti |
+| `etsi_hallituksen_esityksesta` | Sanahaku yhden esityksen tekstistä, palauttaa lohkot ja otteet |
 | `hae_ratkaisuja` | Tietosuojavaltuutetun, eduskunnan oikeusasiamiehen tai oikeuskanslerin ratkaisut otsikolla, asiasanalla tai vuosilla |
 | `hae_ratkaisu` | Yhden ratkaisun tiedot ja koko teksti (PDF-ratkaisuista teksti puretaan) |
 
@@ -32,6 +35,7 @@ Kaikissa tekstityökaluissa:
 - Ajantasainen: `/akn/fi/act/statute-consolidated/{vuosi}/{numero}/fin@latest`
 - Alkuperäinen: `/akn/fi/act/statute/{vuosi}/{numero}/fin@`
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
+- Hallituksen esitykset: `/akn/fi/doc/government-proposal/{vuosi}/{numero}/fin@` (välimuisti 30 vrk)
 - Ratkaisut: `/akn/fi/judgment/{data-protection-ombudsman-decision|parliamentary-ombudsman-decision|chancellor-of-justice-decision}/{vuosi}/{numero}/fin@`
 - Välimuisti: uusin versio 6 h, kiinteät versiot 30 vrk (Cloudflaren Cache API). Säädös jäsennetään kerran, ja välimuistiin tallennetaan valmis hakemisto osina (perustiedot, hakuteksti, muotoillut pykälät), jotta kutsu pysyy Workersin ilmaistason CPU-rajan (10 ms) alla.
 
@@ -62,6 +66,8 @@ Valinnainen salainen polku: aseta Workerille salaisuus `MCP_PATH_SECRET`, jolloi
 
 - Finlexin rajapinnassa ei ole koko tekstin hakua kaikista säädöksistä. Haku toimii nimen osalla ja asiasanoilla, ja yhden säädöksen sisällä sanahaulla.
 - Tuomioistuinten ratkaisut (KKO, KHO) eivät ole Finlexin avoimessa rajapinnassa.
+- Hallituksen esitykset ovat avoimessa datassa vuodesta 1992. Ruotsinkielisistä esityksistä datassa on vain otsikko, joten esitystyökalut ovat suomenkielisiä.
+- Pykälän säännöskohtaiset perustelut tunnistetaan kappaleesta, joka alkaa pykälänumerolla ("3 §.") tai artiklalla ("3 artikla."), ja ne päättyvät seuraavan pykälän tai luvun alkuun. Kaikissa esityksissä ei ole erillisiä säännöskohtaisia perusteluja.
 - Oikeusasiamiehen ratkaisut ja oikeuskanslerin päätökset ovat Finlexissä pääosin PDF:nä. Teksti puretaan PDF:stä automaattisesti (unpdf), joten rivitys ja taulukot voivat poiketa alkuperäisestä.
 - Ratkaisuhaku palauttaa tulokset vanhimmasta uusimpaan; uusimpiin pääsee vuosirajauksella.
 - Ratkaisujen asiasana annetaan Finlexin muodossa, esim. `kameravalvonta`, `terveystiedot` (välilyönnit muutetaan alaviivoiksi).

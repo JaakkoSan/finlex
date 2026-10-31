@@ -1,6 +1,31 @@
 // MCP-työkalut: määrittelyt ja toteutukset.
 
-import { fetchText, fetchHead, cacheGetJson, cachePutJson, consolidatedUrl, originalUrl, listUrl, webUrl, FinlexError } from "./finlex.js";
+import {
+  fetchText,
+  fetchHead,
+  cacheGetJson,
+  cachePutJson,
+  consolidatedUrl,
+  originalUrl,
+  listUrl,
+  docListUrl,
+  webUrl,
+  proposalUrl,
+  proposalWebUrl,
+  FinlexError,
+} from "./finlex.js";
+import { parseXml } from "./xml.js";
+import {
+  PROPOSAL_INDEX_VERSION,
+  buildProposalIndex,
+  partOf,
+  descendants,
+  shardsFor,
+  blockPath,
+  findBlocks,
+  detailBlocks,
+  findRationale,
+} from "./proposal.js";
 import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
 import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import {
@@ -142,6 +167,51 @@ export const TOOLS = [
       required: ["lahde", "vuosi", "numero"],
     },
   },
+  {
+    name: "hae_hallituksen_esityksia",
+    description:
+      "Hakee Finlexistä hallituksen esityksiä otsikon osalla ja/tai vuosilla. Palauttaa tunnukset (HE numero/vuosi) ja otsikot. Säädöksen oman esityksen tunnus löytyy myös saados_tiedot-työkalun Esityöt-rivistä. Finlexin avoimessa datassa ovat esitykset vuodesta 1992.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        otsikko: { type: "string", description: "Merkkijono, jonka esityksen otsikko sisältää, esim. \"arvonlisäverolain\" tai \"sosiaalihuoltolain\"." },
+        alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
+        paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta. Tulokset ovat antopäivän mukaan vanhimmasta uusimpaan." },
+      },
+    },
+  },
+  {
+    name: "hallituksen_esitys",
+    description:
+      "Palauttaa hallituksen esityksen tekstiä Finlexistä. Ilman lisäparametreja: otsikko, antopäivä, ministeriö, esityksen pääasiallinen sisältö, perustelujen sisällysluettelo, lakiehdotukset ja liitteet. Parametrilla osa yksi perustelujen lohko (esim. \"7.1\" tai \"Nykytila\"), parametrilla pykala lakiehdotuksen pykälän säännöskohtaiset (yksityiskohtaiset) perustelut, parametrilla lakiehdotus lakiehdotuksen teksti ja parametrilla liite liitteen teksti (esim. rinnakkaisteksti tai asetusluonnos).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        vuosi: { type: "integer", description: "Esityksen vuosi, esim. 1993 tunnuksesta HE 88/1993. Kaksinumeroinen vuosi (HE 88/93) tulkitaan 1900- tai 2000-luvuksi." },
+        numero: { type: "string", description: "Esityksen numero, esim. \"88\"." },
+        osa: { type: "string", description: "Perustelujen lohko numerolla (\"2.1\"), otsikolla tai sisällysluettelon tunnisteella (\"#12\"). Valinnainen." },
+        pykala: { type: "string", description: "Pykälä, jonka säännöskohtaiset perustelut haetaan, esim. \"3\" tai \"12 a\". Sopimusesityksissä artikla, esim. \"3 artikla\". Valinnainen." },
+        lakiehdotus: { type: "integer", description: "Lakiehdotuksen järjestysnumero (1 = ensimmäinen). Valinnainen." },
+        liite: { type: "integer", description: "Liitteen järjestysnumero (1 = ensimmäinen). Valinnainen." },
+      },
+      required: ["vuosi", "numero"],
+    },
+  },
+  {
+    name: "etsi_hallituksen_esityksesta",
+    description:
+      "Etsii yhden hallituksen esityksen tekstistä (pääasiallinen sisältö, perustelut ja lakiehdotukset) sanaa tai sanontaa ja palauttaa osumat lohkoittain lyhyine otteineen. Hae sen jälkeen koko lohko hallituksen_esitys-työkalun osa-parametrilla. Haku on kirjaimellinen: käytä sanan vartaloa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        vuosi: { type: "integer", description: "Esityksen vuosi, esim. 1993." },
+        numero: { type: "string", description: "Esityksen numero, esim. \"88\"." },
+        hakusana: { type: "string", description: "Etsittävä merkkijono (kirjainkoolla ei väliä)." },
+      },
+      required: ["vuosi", "numero", "hakusana"],
+    },
+  },
 ];
 
 // Työkalujen merkinnät (MCP tool annotations): kaikki työkalut vain lukevat
@@ -153,6 +223,9 @@ const TITLES = {
   etsi_saadoksesta: "Etsi säädöksen tekstistä",
   hae_ratkaisuja: "Hae viranomaisratkaisuja",
   hae_ratkaisu: "Hae viranomaisratkaisu",
+  hae_hallituksen_esityksia: "Hae hallituksen esityksiä",
+  hallituksen_esitys: "Hallituksen esitys",
+  etsi_hallituksen_esityksesta: "Etsi hallituksen esityksestä",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -227,11 +300,11 @@ function memoSet(key, value, ttl) {
   while (memo.size > MEMO_MAX) memo.delete(memo.keys().next().value);
 }
 
-const partKey = (url, part) => `${url}?_index=${INDEX_VERSION}&_part=${part}`;
+const partKey = (url, part, v = INDEX_VERSION) => `${url}?_index=${v}&_part=${part}`;
 
 /** Lukee hakemiston osan muistista tai välimuistista. undefined, jos ei löydy. */
-async function getPart(url, part, ttl) {
-  const key = partKey(url, part);
+async function getPart(url, part, ttl, version = INDEX_VERSION) {
+  const key = partKey(url, part, version);
   let v = memoGet(key);
   if (v !== undefined) return v;
   v = await cacheGetJson(key);
@@ -239,11 +312,11 @@ async function getPart(url, part, ttl) {
   return v;
 }
 
-async function putParts(url, ttl, parts) {
+async function putParts(url, ttl, parts, version = INDEX_VERSION) {
   await Promise.all(
     Object.entries(parts).map(([part, v]) => {
-      memoSet(partKey(url, part), v, ttl);
-      return cachePutJson(partKey(url, part), v, ttl);
+      memoSet(partKey(url, part, version), v, ttl);
+      return cachePutJson(partKey(url, part, version), v, ttl);
     }),
   );
 }
@@ -530,6 +603,272 @@ async function etsiSaadoksesta(args) {
   return clip(out.join("\n"));
 }
 
+// ---------- Hallituksen esitykset ----------
+
+const PROPOSAL_TTL = 30 * 86400; // Annettu esitys ei muutu.
+
+function asProposalYear(v) {
+  let n = Number(v);
+  if (Number.isInteger(n) && n >= 0 && n < 100) n += n >= 60 ? 1900 : 2000;
+  if (!Number.isInteger(n) || n < 1900 || n > 2200) throw new UserError("Anna esityksen vuosi, esim. 1993 tunnuksesta HE 88/1993.");
+  return n;
+}
+
+function asProposalNumber(v) {
+  const s = String(v ?? "").trim();
+  if (!/^[0-9]{1,4}$/.test(s)) throw new UserError("Anna esityksen numero, esim. \"88\" tunnuksesta HE 88/1993.");
+  return s.replace(/^0+(?=\d)/, "");
+}
+
+function proposalParts(idx) {
+  const parts = { base: idx.base };
+  idx.shards.forEach((p, i) => (parts[`p${i}`] = p));
+  idx.billParts.forEach((p, i) => (parts[`b${i}`] = p));
+  idx.attachmentParts.forEach((p, i) => (parts[`a${i}`] = p));
+  return parts;
+}
+
+async function loadProposal(args) {
+  const year = asProposalYear(args.vuosi);
+  const number = asProposalNumber(args.numero);
+  // Vain suomenkielinen: ruotsinkielisistä esityksistä avoimessa datassa on vain otsikko.
+  const lang = "fin";
+  const url = proposalUrl(year, number, lang);
+  const s = { url, year, number, lang, built: null };
+  let base = await getPart(url, "base", PROPOSAL_TTL, PROPOSAL_INDEX_VERSION);
+  if (!base || base.v !== PROPOSAL_INDEX_VERSION) {
+    s.built = await buildProposal(s);
+    base = s.built.base;
+  }
+  s.base = base;
+  if (base.absent && !base.intro && !base.blocks.length && !base.bills.length) {
+    throw new UserError(
+      `Esityksestä ${base.docNumber || `HE ${number}/${year}`} on Finlexin avoimessa datassa vain otsikko: ${base.title}. Teksti: ${proposalWebUrl(year, number)}`,
+    );
+  }
+  return s;
+}
+
+async function buildProposal(s) {
+  const xml = await fetchText(s.url, { ttl: PROPOSAL_TTL });
+  if (xml === null) {
+    throw new UserError(
+      `Hallituksen esitystä HE ${s.number}/${s.year} ei löytynyt Finlexistä (${s.lang}). Finlexin avoimessa datassa ovat esitykset vuodesta 1992 alkaen.`,
+    );
+  }
+  const idx = buildProposalIndex(parseXml(xml));
+  if (!idx) throw new UserError(`Finlexin vastausta esitykselle HE ${s.number}/${s.year} ei voitu tulkita.`);
+  await putParts(s.url, PROPOSAL_TTL, proposalParts(idx), PROPOSAL_INDEX_VERSION);
+  return idx;
+}
+
+/** Hakemiston osa ("p3", "b0", "a1"). Jos osa on poistunut välimuistista, esitys jäsennetään uudelleen. */
+async function proposalPart(s, name) {
+  const fromBuilt = (idx) => {
+    const k = Number(name.slice(1));
+    return name[0] === "p" ? idx.shards[k] : name[0] === "b" ? idx.billParts[k] : idx.attachmentParts[k];
+  };
+  if (s.built) return fromBuilt(s.built);
+  const v = await getPart(s.url, name, PROPOSAL_TTL, PROPOSAL_INDEX_VERSION);
+  if (v !== undefined) return v;
+  s.built = await buildProposal(s);
+  s.base = s.built.base;
+  return fromBuilt(s.built);
+}
+
+/** Kappaleet väliltä [start, end): palauttaa paraAt(i). */
+async function proposalParas(s, start, end) {
+  const loaded = new Map();
+  for (const k of shardsFor(s.base, start, end)) loaded.set(k, await proposalPart(s, `p${k}`));
+  return (i) => {
+    const k = partOf(s.base.shardStarts, i);
+    return loaded.get(k)[i - s.base.shardStarts[k]];
+  };
+}
+
+function proposalHeader(s) {
+  const b = s.base;
+  const lines = [`${b.docNumber || `HE ${s.number}/${s.year}`} ${b.title}`.trim()];
+  const info = [];
+  if (b.dateIssued) info.push(`Annettu ${fmtDate(b.dateIssued)}`);
+  if (b.ministry) info.push(`ministeriö: ${b.ministry}`);
+  if (info.length) lines.push(info.join(", ") + ".");
+  lines.push(`Lähde: ${proposalWebUrl(s.year, s.number)}`);
+  return lines.join("\n");
+}
+
+const blockLabel = (b) => [b.num, b.heading].filter(Boolean).join(" ") || "(otsikoton lohko)";
+
+async function haeHallituksenEsityksia(args) {
+  if (!args.otsikko && !args.alkaen_vuosi && !args.paattyen_vuosi) throw new UserError("Anna otsikko tai vuosi.");
+  const page = Math.max(1, Number(args.sivu) || 1);
+  const params = {
+    langAndVersion: "fin@",
+    titleContains: args.otsikko,
+    startYear: args.alkaen_vuosi,
+    endYear: args.paattyen_vuosi,
+    limit: 10,
+    page,
+    sortBy: "dateIssued",
+  };
+  const raw = await fetchText(docListUrl("government-proposal", params), { ttl: 3600, accept: "application/json" });
+  const list = raw ? JSON.parse(raw) : [];
+  if (!list.length) return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. sanan vartaloa \"arvonlisävero\").";
+  const items = [];
+  const seen = new Set();
+  for (const it of list) {
+    const m = String(it.akn_uri).match(/government-proposal\/(\d{4})\/(\d+)\//);
+    if (!m || seen.has(`${m[2]}/${m[1]}`)) continue;
+    seen.add(`${m[2]}/${m[1]}`);
+    items.push({ year: m[1], number: m[2] });
+  }
+  const heads = await Promise.all(items.map((it) => fetchHead(proposalUrl(it.year, it.number, "fin")).catch(() => null)));
+  const lines = items.map((it, i) => `HE ${it.number}/${it.year} ${heads[i]?.title ?? "(otsikko ei saatavilla)"}`);
+  let out = `Hallituksen esitykset (sivu ${page}, vanhimmasta uusimpaan):\n` + lines.join("\n");
+  if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1}.`;
+  out += "\n\nHae esitys työkalulla hallituksen_esitys (vuosi ja numero).";
+  return out;
+}
+
+async function hallituksenEsitys(args) {
+  const s = await loadProposal(args);
+  const b = s.base;
+  const out = [proposalHeader(s), ""];
+
+  if (args.lakiehdotus !== undefined || args.liite !== undefined) {
+    const isBill = args.lakiehdotus !== undefined;
+    const n = Number(isBill ? args.lakiehdotus : args.liite);
+    const names = isBill ? b.bills : b.attachments;
+    const what = isBill ? "Lakiehdotus" : "Liite";
+    if (!Number.isInteger(n) || n < 1 || n > names.length) {
+      throw new UserError(names.length ? `${what} ${n} ei ole olemassa. Esityksessä on ${names.length} ${isBill ? "lakiehdotusta" : "liitettä"}.` : `Esityksessä ei ole ${isBill ? "lakiehdotuksia" : "liitteitä"}.`);
+    }
+    const starts = isBill ? b.billStarts : b.attachmentStarts;
+    const k = partOf(starts, n - 1);
+    const texts = await proposalPart(s, `${isBill ? "b" : "a"}${k}`);
+    out.push(`${what} ${n}: ${names[n - 1]}`, "", finalize(texts[n - 1 - starts[k]]));
+    return clip(out.join("\n"));
+  }
+
+  if (args.pykala !== undefined && args.pykala !== "") {
+    const details = detailBlocks(b);
+    if (!details.length) {
+      out.push("Esityksessä ei ole erillisiä säännöskohtaisia (yksityiskohtaisia) perusteluja. Etsi pykälää etsi_hallituksen_esityksesta-työkalulla.");
+      return out.join("\n");
+    }
+    const found = findRationale(b, args.pykala);
+    if (found === null) throw new UserError("Anna pykälä numerona, esim. \"3\" tai \"12 a\", tai artikla, esim. \"3 artikla\".");
+    if (!found.length) {
+      const labels = [...new Set(b.rationaleIndex.map((r) => r.l))].slice(0, 300);
+      out.push(
+        `${/artikla/i.test(String(args.pykala)) ? `Kohdan ${args.pykala}` : `Pykälän ${args.pykala}`} perusteluja ei löytynyt säännöskohtaisista perusteluista.` +
+          (labels.length ? ` Perusteluissa käsitellyt pykälät ja artiklat: ${labels.join(", ")}.` : "") +
+          " Kaikkia pykäliä ei aina perustella erikseen. Kokeile etsi_hallituksen_esityksesta-työkalua.",
+      );
+      return clip(out.join("\n"));
+    }
+    const hits = [];
+    for (const r of found) {
+      const paraAt = await proposalParas(s, r.s, r.e);
+      const parts = [];
+      for (let i = r.s; i < r.e; i++) parts.push(paraAt(i).t);
+      hits.push({ path: r.b >= 0 ? blockPath(b, r.b) : "", text: parts.join("\n\n") });
+    }
+    out.push(`${/artikla/i.test(String(args.pykala)) ? `Kohdan ${args.pykala}` : `Pykälän ${args.pykala}`} säännöskohtaiset perustelut${hits.length > 1 ? ` (${hits.length} osumaa, esim. eri lakiehdotuksista)` : ""}:`);
+    for (const h of hits) out.push("", `Lohko: ${h.path}`, "", h.text);
+    out.push("", "Perustelu on rajattu pykälän tai artiklan aloittavasta kappaleesta seuraavan alkuun. Tarkista tarvittaessa koko lohko osa-parametrilla.");
+    return clip(out.join("\n"));
+  }
+
+  if (args.osa !== undefined && args.osa !== "") {
+    const found = findBlocks(b, args.osa);
+    if (!found.length) throw new UserError(`Lohkoa "${args.osa}" ei löytynyt. Katso sisällysluettelo hakemalla esitys ilman osa-parametria.`);
+    if (found.length > 1) {
+      out.push(`"${args.osa}" vastaa useaa lohkoa. Valitse tunnisteella:`);
+      for (const i of found.slice(0, 20)) out.push(`- osa "#${i}": ${blockPath(b, i)}`);
+      return out.join("\n");
+    }
+    const i = found[0];
+    const blk = b.blocks[i];
+    const paraAt = await proposalParas(s, blk.start, blk.end);
+    out.push(blockPath(b, i), "");
+    const subs = descendants(b, i);
+    let cursor = blk.start;
+    const body = [];
+    for (const d of subs) {
+      for (; cursor < b.blocks[d].start; cursor++) body.push(paraAt(cursor).t);
+      body.push(`${"#".repeat(Math.min(6, b.blocks[d].depth - blk.depth + 1))} ${blockLabel(b.blocks[d])}`);
+    }
+    for (; cursor < blk.end; cursor++) body.push(paraAt(cursor).t);
+    out.push(body.join("\n\n") || "(lohkossa ei ole tekstiä)");
+    return clip(out.join("\n"));
+  }
+
+  // Yleiskuva.
+  if (b.intro) out.push("ESITYKSEN PÄÄASIALLINEN SISÄLTÖ", "", b.intro, "");
+  if (b.blocks.length) {
+    out.push('Perustelujen sisällys (hae lohko osa-parametrilla, esim. osa: "2.1"; suluissa tekstin pituus merkkeinä):');
+    for (const blk of b.blocks) out.push(`${"  ".repeat(blk.depth)}${blockLabel(blk)} (${fmtCount(blk.len)})`);
+    const details = detailBlocks(b);
+    if (details.length) out.push("", `Säännöskohtaiset perustelut: ${details.map((d) => blockLabel(b.blocks[d])).join(", ")}. Yksittäisen pykälän perustelut saa pykala-parametrilla.`);
+    out.push("");
+  }
+  if (b.bills.length) {
+    out.push("Lakiehdotukset (teksti lakiehdotus-parametrilla, esim. lakiehdotus: 1):");
+    b.bills.forEach((t, i) => out.push(`${i + 1}. ${t}`));
+    out.push("");
+  }
+  if (b.attachments.length) {
+    out.push("Liitteet (teksti liite-parametrilla):");
+    b.attachments.forEach((t, i) => out.push(`${i + 1}. ${t}`));
+  }
+  return clip(out.join("\n").trimEnd());
+}
+
+// Tuhaterotin ilman Intl.NumberFormatia (sen luonti alustaa ICU:n, mikä vie kylmänä
+// isolaatissa yli 10 ms CPU-aikaa).
+const fmtCount = (n) => String(n ?? 0).replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
+
+async function etsiHallituksenEsityksesta(args) {
+  const q = String(args.hakusana ?? "").trim();
+  if (q.length < 3) throw new UserError("Hakusanan pitää olla vähintään 3 merkkiä.");
+  const s = await loadProposal(args);
+  const b = s.base;
+  const ql = q.toLowerCase();
+  const MAX = 30;
+  const hits = [];
+  const snippet = (t, i) => {
+    const start = Math.max(0, i - 120);
+    return (start > 0 ? "…" : "") + t.slice(start, i + q.length + 160) + "…";
+  };
+  const i0 = b.intro.toLowerCase().indexOf(ql);
+  if (i0 !== -1) hits.push({ where: "Esityksen pääasiallinen sisältö", text: snippet(b.intro, i0) });
+  if (b.nParas) {
+    const paraAt = await proposalParas(s, 0, b.nParas);
+    for (let i = 0; i < b.nParas && hits.length < MAX; i++) {
+      const p = paraAt(i);
+      const j = p.t.toLowerCase().indexOf(ql);
+      if (j === -1) continue;
+      hits.push({ where: p.b >= 0 ? `${blockPath(b, p.b)} [osa "#${p.b}"]` : "Perustelut", text: snippet(p.t, j) });
+    }
+  }
+  for (let n = 0; n < b.bills.length && hits.length < MAX; n++) {
+    const k = partOf(b.billStarts, n);
+    const t = (await proposalPart(s, `b${k}`))[n - b.billStarts[k]];
+    const j = t.toLowerCase().indexOf(ql);
+    if (j !== -1) hits.push({ where: `Lakiehdotus ${n + 1}: ${b.bills[n]}`, text: snippet(finalize(t), j) });
+  }
+  const out = [proposalHeader(s), ""];
+  if (!hits.length) {
+    out.push(`Hakusanaa "${q}" ei löytynyt esityksestä. Kokeile sanan vartaloa tai synonyymiä.`);
+  } else {
+    out.push(`Osumat hakusanalle "${q}" (${hits.length}${hits.length >= MAX ? "+, näytetään 30" : ""}):`);
+    for (const h of hits) out.push("", h.where, `  ${h.text}`);
+    out.push("", 'Hae koko lohko hallituksen_esitys-työkalulla, esim. osa: "#12".');
+  }
+  return clip(out.join("\n"));
+}
+
 // ---------- Viranomaisratkaisut ----------
 
 function asSource(v) {
@@ -636,6 +975,9 @@ const HANDLERS = {
   etsi_saadoksesta: etsiSaadoksesta,
   hae_ratkaisuja: haeRatkaisuja,
   hae_ratkaisu: haeRatkaisu,
+  hae_hallituksen_esityksia: haeHallituksenEsityksia,
+  hallituksen_esitys: hallituksenEsitys,
+  etsi_hallituksen_esityksesta: etsiHallituksenEsityksesta,
 };
 
 export async function callTool(name, args = {}) {

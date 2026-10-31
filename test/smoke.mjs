@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 6, "tools/list (6 työkalua)");
+check(list.result?.tools?.length === 9, "tools/list (9 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -45,6 +45,12 @@ const cases = [
   ["hae_pykala", { vuosi: 2018, numero: "1050", pykala: "1", teksti: "alkuperainen" }, (t) => t.includes("ALKUPERÄINEN")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "3", versio: "448/2024" }, (t) => t.includes("3 §")],
   ["hae_pykala", { vuosi: 2019, numero: "872", pykala: "1", kieli: "swe" }, (t) => t.includes("1 §")],
+  ["hae_hallituksen_esityksia", { otsikko: "arvonlisäverolaiksi", paattyen_vuosi: 1995 }, (t) => t.includes("HE 88/1993")],
+  ["hallituksen_esitys", { vuosi: 2024, numero: "1" }, (t) => t.includes("PÄÄASIALLINEN SISÄLTÖ") && t.includes("7.1 Laki rajavartiolaitoksen hallinnosta")],
+  ["hallituksen_esitys", { vuosi: 93, numero: "88", pykala: "3" }, (t) => t.includes("3 §. Hallinnollisista syistä")],
+  ["hallituksen_esitys", { vuosi: 2024, numero: "1", osa: "2.3.1" }, (t) => t.includes("Tarve poiketa julkisesta hakumenettelystä")],
+  ["hallituksen_esitys", { vuosi: 2024, numero: "1", lakiehdotus: 2 }, (t) => t.includes("34 g §")],
+  ["etsi_hallituksen_esityksesta", { vuosi: 2024, numero: "1", hakusana: "kadet" }, (t) => t.includes("Osumat")],
   ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (t) => t.includes("numero") && t.includes("Tietosuojavaltuutettu")],
   ["hae_ratkaisuja", { lahde: "oikeusasiamies", otsikko: "kotihoito" }, (t) => t.includes("numero")],
   ["hae_ratkaisu", { lahde: "tietosuojavaltuutettu", vuosi: 2025, numero: "2443" }, (t) => t.includes("TSV/61/2021") && t.includes("Asia")],
