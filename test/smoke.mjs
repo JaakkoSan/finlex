@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 19, "tools/list (19 työkalua)");
+check(list.result?.tools?.length === 21, "tools/list (21 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -54,6 +54,11 @@ const cases = [
   ["etsi_hallituksen_esityksesta", { vuosi: 2024, numero: "1", hakusana: "kadet" }, (t) => t.includes("Osumat")],
   ["eduskuntakasittely", { asia: "HE 74/2022 vp" }, (t) => t.includes("PeVL 38/2022 vp") && t.includes("säädös 116/2023") && t.includes("16.11.2022 Toinen käsittely") && t.includes("vastalause")],
   ["eduskuntakasittely", { asia: "HE 44/2002" }, (t) => t.includes("LaVM 28/2002 vp") && t.includes("1. Laki rikoslain muuttamisesta")],
+  ["eduskunnan_aanestykset", { aanestys: "2026-71-3" }, (t) => t.includes("Tulos: jaa 100, ei 22, tyhjiä 52, poissa 25") && t.includes("Hallitusryhmät")],
+  ["eduskunnan_aanestykset", { asia: "HE 151/2026 vp", edustaja: "Petteri Orpo" }, (t) => t.includes("2026-104-1") && t.includes("Petteri Orpo (kok)")],
+  ["eduskunnan_aanestykset", { hakusana: "alkoholilain" }, (t) => t.includes("osumaa") && t.includes("HE 131/2025 vp")],
+  ["kirjallinen_kysymys", { kysymys: "KK 365/2026 vp" }, (t) => t.includes("Kysyjä: Mia Laiho") && t.includes("Kysymys:") && t.includes("Vastaus KKV 365/2026 vp")],
+  ["hae_eduskunnan_asiakirjoja", { tyyppi: "kysymys", hakusana: "kauneudenhoito" }, (t) => t.includes("KK 365/2026 vp") && t.includes("Kysyjä:")],
   ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp" }, (t) => t.includes("VALIOKUNNAN PÄÄTÖSESITYS") && t.includes("tavallisen lain säätämisjärjestyksessä")],
   ["eduskunnan_asiakirja", { asiakirja: "StVM 21/2022 vp", pykala: "51 a", laki: "1" }, (t) => t.includes("VALIOKUNNAN PERUSTELUT") && t.includes("«enimmäisajat»")],
   ["eduskunnan_asiakirja", { asiakirja: "LaVM 28/2002 vp", pykala: "3", luku: "3", laki: "1" }, (t) => t.includes("Laiminlyönnin rangaistavuus")],

@@ -4,10 +4,10 @@
 // GET-pyynnöt 180:een ja POST-pyynnöt 90:een minuutissa IP-osoitetta kohden, joten
 // vastaukset välimuistitetaan.
 
-import { FinlexError } from "./finlex.js";
+import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 
 export const EDK_API = "https://api.eduskunta.fi/api/v1";
-const USER_AGENT = "finlex-mcp/1.5 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = "finlex-mcp/1.8 (Claude-liitin; Cloudflare Worker)";
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 
@@ -175,4 +175,97 @@ export function fetchDocHtml(edktunnus) {
 /** Hakemiston välimuistiavain asiakirjalle. */
 export function docIndexUrl(edktunnus) {
   return `${EDK_API}/asiakirjat/edktunnus/${encodeURIComponent(edktunnus)}/html`;
+}
+
+// ---------- Täysistunnon äänestykset ----------
+
+const VOTE_EXCLUDE = ["aanestystapahtumat", "vaalipiiriJakaumat"];
+
+export const voteApiUrl = (id) => `${EDK_API}/taysistunnot/aanestykset/${encodeURIComponent(id)}`;
+
+/** Yksi äänestys tunnuksella "vuosi-istunto-numero" (esim. 2026-104-1). null, jos ei löydy. */
+export async function fetchVote(id, ttl = 6 * 3600) {
+  const t = await edkFetch(`/taysistunnot/aanestykset/${encodeURIComponent(id)}`, { ttl });
+  return t ? JSON.parse(t) : null;
+}
+
+/** Asian kaikki äänestykset (täydet tiedot edustajineen). */
+export async function fetchMatterVotes(tunnus, ttl = 3600) {
+  const t = await edkFetch(`/taysistunnot/asian-aanestykset/${encodeURIComponent(tunnus)}`, { ttl });
+  const d = t ? JSON.parse(t) : [];
+  return Array.isArray(d) ? d : [];
+}
+
+/**
+ * Äänestysten haku uusimmasta alkaen. query = vapaa tekstihaku, from/to = päivät (to mukaan lukien),
+ * person = { first, last } rajaa äänestyksiin, joissa edustaja oli mukana, ja palauttaa edustajien äänet.
+ */
+export async function searchVotes({ query, from, to, person, start = 0, size = 10 }, ttl = 1800) {
+  const and = [];
+  if (from || to) {
+    const next = to ? new Date(Date.parse(`${to}T00:00:00Z`) + 86400_000).toISOString().slice(0, 10) : null;
+    and.push({ property: "aanestysalkuaika", fromDate: from ?? null, toDate: next });
+  }
+  if (person) {
+    const w = [{ property: "sukunimi", match: person.last }];
+    if (person.first) w.push({ property: "etunimi", match: person.first });
+    and.push({ property: "aanestystapahtumat", with: { and: w } });
+  }
+  const req = {
+    category: "aanestys",
+    maxResults: size,
+    startFromIndex: start,
+    fields: { operation: "exclude", list: person ? ["vaalipiiriJakaumat"] : VOTE_EXCLUDE },
+    sort: [{ property: "aanestysalkuaika", ascending: false }],
+  };
+  if (query) req.query = query;
+  if (and.length) req.expression = { and };
+  const r = await edkSearch(req, ttl);
+  return { total: r.searchMetadata?.totalResultCount ?? 0, votes: (r.results ?? []).map((x) => x.aanestys).filter(Boolean) };
+}
+
+// ---------- Asiakirjan PDF ----------
+
+function tidyPdf(t) {
+  return String(t ?? "")
+    .replace(/­/g, "")
+    .replace(/(\p{L})-\n(\p{Ll})/gu, "$1$2")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Asiakirjan teksti PDF:stä (esim. vastaus kirjalliseen kysymykseen, jolla ei ole HTML-muotoa). */
+export async function fetchDocPdfText(edktunnus) {
+  const url = `${EDK_API}/asiakirjat/edktunnus/${encodeURIComponent(edktunnus)}/pdf`;
+  const key = `${url}?_text=1`;
+  const hit = await cacheGetJson(key);
+  if (hit) return hit;
+  let bytes = null;
+  let lastErr;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/pdf" } });
+    } catch (e) {
+      lastErr = e;
+      await sleep(500 * 2 ** attempt);
+      continue;
+    }
+    if (res.status === 404) return null;
+    if (res.ok) {
+      bytes = new Uint8Array(await res.arrayBuffer());
+      break;
+    }
+    lastErr = new EduskuntaError(`Eduskunnan rajapinta vastasi ${res.status}`, res.status);
+    if (!RETRY_STATUS.has(res.status)) break;
+    await sleep(500 * 2 ** attempt);
+  }
+  if (!bytes) throw lastErr instanceof EduskuntaError ? lastErr : new EduskuntaError(`Asiakirjaa ei saatu ladattua: ${lastErr?.message ?? lastErr}`, 0);
+  const { extractText, getDocumentProxy } = await import("unpdf");
+  const pdf = await getDocumentProxy(bytes);
+  const { totalPages, text } = await extractText(pdf, { mergePages: true });
+  const out = { text: tidyPdf(text), pages: totalPages };
+  await cachePutJson(key, out, 30 * 86400);
+  return out;
 }

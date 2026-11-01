@@ -30,7 +30,7 @@ import {
 import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
 import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
-import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch } from "./eduskunta.js";
+import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
@@ -250,17 +250,50 @@ export const TOOLS = [
   {
     name: "hae_eduskunnan_asiakirjoja",
     description:
-      "Hakee valiokuntien mietintöjä ja lausuntoja sekä eduskunnan vastauksia sanalla tekstistä, valiokunnalla ja vuosilla. Palauttaa tunnukset, päivämäärät ja käsitellyn asian (esim. HE). Yhden hallituksen esityksen asiakirjat saa suoremmin eduskuntakasittely-työkalulla.",
+      "Hakee valiokuntien mietintöjä ja lausuntoja, eduskunnan vastauksia ja kansanedustajien kirjallisia kysymyksiä sanalla tekstistä, valiokunnalla, laatijalla (kysyjä) ja vuosilla. Palauttaa tunnukset, päivämäärät ja käsitellyn asian (esim. HE). Yhden hallituksen esityksen asiakirjat saa suoremmin eduskuntakasittely-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
         hakusana: { type: "string", description: "Sana tai sanonta asiakirjan tekstistä, esim. \"omaishoito\". Haku vertaa sanoja sellaisinaan, joten kokeile myös taivutusmuotoja (\"omaishoidon\")." },
-        tyyppi: { type: "string", enum: ["mietinto", "lausunto", "vastaus"], description: "Valiokunnan mietintö, valiokunnan lausunto tai eduskunnan vastaus. Oletus: kaikki." },
+        tyyppi: { type: "string", enum: ["mietinto", "lausunto", "vastaus", "kysymys"], description: "Valiokunnan mietintö, valiokunnan lausunto, eduskunnan vastaus tai kirjallinen kysymys. Oletus: mietinnöt, lausunnot ja vastaukset." },
+        laatija: { type: "string", description: "Kirjallisen kysymyksen kysyjä (kansanedustajan nimi). Valinnainen; rajaa kirjallisiin kysymyksiin." },
         valiokunta: { type: "string", description: "Valiokunnan nimi, esim. \"perustuslakivaliokunta\" tai \"sosiaali- ja terveysvaliokunta\". Valinnainen." },
         alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
         paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
         sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta, uusimmasta vanhimpaan." },
       },
+    },
+  },
+  {
+    name: "eduskunnan_aanestykset",
+    description:
+      "Eduskunnan täysistunnon äänestykset: tulos (jaa, ei, tyhjiä, poissa), hallitus- ja oppositioryhmien ja eduskuntaryhmien jakaumat, ryhmänsä enemmistöstä poikenneet edustajat sekä yksittäisen edustajan ääni. Hakutavat: aanestys (tunnus, esim. 2026-104-1), asia (esim. HE 151/2026 vp, kaikki asian äänestykset), tai hakusana, edustaja ja aikaväli.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        aanestys: { type: "string", description: "Äänestyksen tunnus vuosi-istunto-numero, esim. \"2026-104-1\"." },
+        asia: { type: "string", description: "Asian tunnus, esim. \"HE 151/2026 vp\". Palauttaa asian kaikki äänestykset." },
+        hakusana: { type: "string", description: "Vapaa tekstihaku asian otsikosta ja äänestyksen otsikosta, esim. \"alkoholilain\"." },
+        edustaja: { type: "string", description: "Kansanedustajan nimi (\"Petteri Orpo\" tai sukunimi). Näyttää edustajan äänen; haussa rajaa äänestyksiin, joissa edustaja oli mukana." },
+        ryhma: { type: "string", description: "aanestys-haussa: listaa eduskuntaryhmän edustajien äänet (lyhenne kok, ps, sd, kesk, vihr, vas, r, kd tai nimen osa)." },
+        kaikki_edustajat: { type: "boolean", description: "aanestys-haussa: true = kaikkien edustajien äänet." },
+        alkaen: { type: "string", description: "Äänestykset alkaen (vvvv-kk-pp)." },
+        asti: { type: "string", description: "Äänestykset asti (vvvv-kk-pp)." },
+        sivu: { type: "integer", description: "Tulossivu (10 äänestystä sivulla)." },
+      },
+    },
+  },
+  {
+    name: "kirjallinen_kysymys",
+    description:
+      "Kansanedustajan kirjallinen kysymys ministerille ja ministerin vastaus: kysyjä ja eduskuntaryhmä, päivät, tila, kysymyksen teksti ja vastauksen teksti (vastaukset ovat usein vain PDF:nä, jolloin teksti puretaan PDF:stä). Kysymyksiä haetaan hae_eduskunnan_asiakirjoja-työkalulla (tyyppi kysymys).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kysymys: { type: "string", description: "Kysymyksen tunnus, esim. \"KK 300/2026 vp\" tai \"300/2026\"." },
+        vain_vastaus: { type: "boolean", description: "true = jätä kysymyksen teksti pois ja näytä vain vastaus." },
+      },
+      required: ["kysymys"],
     },
   },
   {
@@ -393,6 +426,8 @@ const TITLES = {
   eduskuntakasittely: "Eduskuntakäsittely",
   eduskunnan_asiakirja: "Eduskunnan asiakirja",
   hae_eduskunnan_asiakirjoja: "Hae eduskunnan asiakirjoja",
+  eduskunnan_aanestykset: "Eduskunnan äänestykset",
+  kirjallinen_kysymys: "Kirjallinen kysymys ja vastaus",
   hae_lainvalmisteluhankkeita: "Hae lainvalmisteluhankkeita",
   lainvalmisteluhanke: "Lainvalmisteluhanke",
   lainvalmistelun_asiakirja: "Lainvalmistelun asiakirja",
@@ -1440,19 +1475,24 @@ async function renderEdkBlock(s, i, maxChars = Infinity, stopAtSignature = false
 // --- Haku ---
 
 const DOC_TYPES = { mietinto: "Valiokunnan mietintö", lausunto: "Valiokunnan lausunto", vastaus: "Eduskunnan vastaus" };
+const QUESTION_TYPE = "Kirjallinen kysymys";
 
 async function haeEduskunnanAsiakirjoja(args) {
   const q = String(args.hakusana ?? "").trim();
   const committee = String(args.valiokunta ?? "").trim();
-  if (!q && !committee && !args.alkaen_vuosi && !args.paattyen_vuosi) throw new UserError("Anna hakusana, valiokunta tai vuosi.");
-  if (args.tyyppi && !DOC_TYPES[args.tyyppi]) throw new UserError("tyyppi: mietinto, lausunto tai vastaus.");
+  const author = String(args.laatija ?? "").trim();
+  if (!q && !committee && !author && !args.alkaen_vuosi && !args.paattyen_vuosi) throw new UserError("Anna hakusana, valiokunta, laatija tai vuosi.");
+  if (args.tyyppi && !DOC_TYPES[args.tyyppi] && args.tyyppi !== "kysymys") throw new UserError("tyyppi: mietinto, lausunto, vastaus tai kysymys.");
   const page = Math.max(1, Number(args.sivu) || 1);
-  const types = args.tyyppi ? [DOC_TYPES[args.tyyppi]] : Object.values(DOC_TYPES);
+  const questions = args.tyyppi === "kysymys" || (author && !args.tyyppi);
+  if (author && !questions) throw new UserError("laatija-rajaus toimii kirjallisille kysymyksille (tyyppi kysymys).");
+  const types = questions ? [QUESTION_TYPE] : args.tyyppi ? [DOC_TYPES[args.tyyppi]] : Object.values(DOC_TYPES);
   const and = [
     { property: "kielikoodi", stringValue: "fi" },
     types.length === 1 ? { property: "asiakirjatyyppinimi", stringValue: types[0] } : { or: types.map((t) => ({ property: "asiakirjatyyppinimi", stringValue: t })) },
   ];
   if (committee) and.push({ property: "valiokuntanimi", stringValue: committee[0].toUpperCase() + committee.slice(1).toLowerCase() });
+  if (author) and.push({ property: "toimijaLaatija.henkilo.nimi", match: author });
   if (args.alkaen_vuosi || args.paattyen_vuosi) {
     and.push({
       property: "laadintapvm",
@@ -1477,10 +1517,226 @@ async function haeEduskunnanAsiakirjoja(args) {
   for (const a of rows) {
     const parts = [a.laadintapvm ? fmtDate(a.laadintapvm) : null, a.vireilletuloEduskuntatunnus ? `asia ${a.vireilletuloEduskuntatunnus}` : null].filter(Boolean);
     out.push(`${a.eduskuntatunnus ?? a.edktunnus} ${a.asiakirjatyyppinimi ?? ""}${a.valiokuntanimi ? `, ${lc1(a.valiokuntanimi)}` : ""}${parts.length ? ` (${parts.join(", ")})` : ""}`);
-    if (a.nimeketeksti) out.push(`  ${a.nimeketeksti}`);
+    if (a.nimeketeksti) out.push(`  ${String(a.nimeketeksti).replace(/\s+/g, " ").trim()}`);
+    const who = a.toimijaLaatija?.henkilo;
+    if (questions && who?.nimi) out.push(`  Kysyjä: ${who.nimi}${who.eduskuntaryhma?.nimi ? ` (${who.eduskuntaryhma.nimi})` : ""}`);
   }
   if (total > page * 10) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
-  out.push("", "Hae teksti eduskunnan_asiakirja-työkalulla (tunnus) ja käsittelyn vaiheet eduskuntakasittely-työkalulla (asia).");
+  out.push("", questions ? "Kysymys ja ministerin vastaus kirjallinen_kysymys-työkalulla (tunnus)." : "Hae teksti eduskunnan_asiakirja-työkalulla (tunnus) ja käsittelyn vaiheet eduskuntakasittely-työkalulla (asia).");
+  return clip(out.join("\n"));
+}
+
+// ---------- Täysistunnon äänestykset ----------
+
+const VOTE_SOURCE = "Lähde: Eduskunnan avoin data (CC BY 4.0), täysistuntojen äänestykset";
+const VOTE_ID_RE = /^\s*(\d{4})\s*[-/]\s*(\d{1,3})\s*[-/]\s*(\d{1,3})\s*$/;
+const VOTE_ORDER = ["Jaa", "Ei", "Tyhjää", "Poissa"];
+
+const fiv = (v) => (v && typeof v === "object" ? v.fi ?? v.sv ?? null : v ?? null);
+const foldName = (s) => String(s ?? "").toLowerCase().normalize("NFC").replace(/\s+/g, " ").trim();
+
+function parsePerson(v) {
+  const s = String(v ?? "").trim().replace(/\s+/g, " ");
+  if (!s) return null;
+  if (s.length < 3) throw new UserError("Anna edustajan sukunimi tai koko nimi, esim. \"Petteri Orpo\".");
+  const parts = s.split(" ");
+  return parts.length === 1 ? { last: parts[0] } : { first: parts.slice(0, -1).join(" "), last: parts.at(-1) };
+}
+
+function personMatches(e, p) {
+  if (!p) return false;
+  if (foldName(e.sukunimi) !== foldName(p.last)) return false;
+  return !p.first || foldName(e.etunimi).startsWith(foldName(p.first));
+}
+
+function voteTime(a) {
+  const t = String(a.aanestysalkuaika ?? "").match(/T(\d{2}):(\d{2})/);
+  return `${fmtDate(String(a.istuntopvm ?? "").slice(0, 10))}${t ? ` klo ${+t[1]}.${t[2]}` : ""}`;
+}
+
+const tally = (r) => (r ? `jaa ${r.jaa}, ei ${r.ei}, tyhjiä ${r.tyhjia}, poissa ${r.poissa}` : "–");
+
+function voteMatter(a) {
+  const doc = fiv(a.kohta?.asiakirjat?.paaasiakirjaEduskuntatunnus);
+  const title = String(fiv(a.kohta?.otsikko) ?? "").replace(/\s+/g, " ").trim();
+  return { doc, title };
+}
+
+function voteSummaryLine(a, p) {
+  const { doc, title } = voteMatter(a);
+  const mine = p ? (a.aanestystapahtumat ?? []).find((e) => personMatches(e, p)) : null;
+  const lines = [`${a.id} · ${voteTime(a)} · ${doc ?? title.slice(0, 80)}${a.aanestysmitatoity ? " · MITÄTÖITY" : ""}`];
+  if (doc && title) lines.push(`  ${title.length > 160 ? `${title.slice(0, 160)}…` : title}`);
+  lines.push(`  ${String(fiv(a.aanestysotsikko) ?? "").replace(/\s+/g, " ").trim()}: ${tally(a.aanestystulos)}`);
+  if (mine) lines.push(`  ${mine.etunimi} ${mine.sukunimi} (${fiv(mine.edkryhmalyhenne)}): ${fiv(mine.kayttaytyminen)}`);
+  return lines.join("\n");
+}
+
+function voteDetail(a, { person, group, all }) {
+  const { doc, title } = voteMatter(a);
+  const out = [`Äänestys ${a.id}: täysistunto ${a.istuntonumero}/${a.istuntovpvuosi}, ${voteTime(a)}${a.aanestysmitatoity ? " (ÄÄNESTYS MITÄTÖITY)" : ""}`];
+  out.push(`Asia: ${[doc, title].filter(Boolean).join(" ")}`);
+  const phase = [fiv(a.kohta?.kasittelyotsikkonimi), fiv(a.kohta?.kasittelyvaihenimi)].filter(Boolean);
+  if (phase.length) out.push(`Käsittely: ${[...new Set(phase)].join(", ")}`);
+  out.push(`Äänestys: ${String(fiv(a.aanestysotsikko) ?? "").replace(/\s+/g, " ").trim()}`);
+  out.push(`Tulos: ${tally(a.aanestystulos)} (yhteensä ${a.aanestystulos?.yhteensa ?? "?"})`);
+  for (const j of a.hallitusoppositioJakaumat ?? []) out.push(`- ${fiv(j.nimi)}: ${tally(j)}`);
+  const evs = a.aanestystapahtumat ?? [];
+  const abbr = new Map();
+  for (const e of evs) abbr.set(fiv(e.eduskuntaryhma), fiv(e.edkryhmalyhenne));
+  if ((a.eduskuntaryhmaJakaumat ?? []).length) {
+    out.push("", "Eduskuntaryhmät:");
+    for (const j of a.eduskuntaryhmaJakaumat) {
+      const ab = abbr.get(fiv(j.nimi));
+      out.push(`- ${fiv(j.nimi)}${ab ? ` (${ab})` : ""}: ${tally(j)}`);
+    }
+  }
+  // Ryhmänsä enemmistöstä poikkeavat (poissaoloja ei lasketa).
+  const byGroup = new Map();
+  for (const e of evs) {
+    const g = fiv(e.edkryhmalyhenne) ?? "?";
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(e);
+  }
+  const deviants = [];
+  for (const [g, list] of byGroup) {
+    const counts = {};
+    for (const e of list) {
+      const v = fiv(e.kayttaytyminen);
+      if (v !== "Poissa") counts[v] = (counts[v] ?? 0) + 1;
+    }
+    const sorted = Object.entries(counts).sort((x, y) => y[1] - x[1]);
+    if (sorted.length < 2 || sorted[0][1] === sorted[1][1]) continue;
+    const major = sorted[0][0];
+    for (const e of list) {
+      const v = fiv(e.kayttaytyminen);
+      if (v !== "Poissa" && v !== major) deviants.push(`${e.etunimi} ${e.sukunimi} (${g}): ${v}, ryhmän enemmistö ${major}`);
+    }
+  }
+  if (deviants.length) {
+    out.push("", `Ryhmänsä enemmistöstä poikkesi ${deviants.length}:`, ...deviants.slice(0, 40).map((d) => `- ${d}`));
+    if (deviants.length > 40) out.push(`… ja ${deviants.length - 40} muuta.`);
+  }
+  if (person) {
+    const hits = evs.filter((e) => personMatches(e, person));
+    out.push("", hits.length ? hits.map((e) => `${e.etunimi} ${e.sukunimi} (${fiv(e.edkryhmalyhenne)}, ${fiv(e.vaalipiiri)}): ${fiv(e.kayttaytyminen)}`).join("\n") : `Edustajaa "${[person.first, person.last].filter(Boolean).join(" ")}" ei ole tämän äänestyksen tiedoissa.`);
+  }
+  if (group || all) {
+    const g = group ? foldName(group) : null;
+    const list = evs.filter((e) => !g || foldName(fiv(e.edkryhmalyhenne)) === g || foldName(fiv(e.eduskuntaryhma)).includes(g));
+    if (!list.length) out.push("", `Eduskuntaryhmää "${group}" ei löytynyt. Käytä lyhennettä (esim. kok, ps, sd, kesk, vihr, vas, r, kd) tai nimen osaa.`);
+    else {
+      out.push("", group ? `Edustajien äänet (${group}):` : "Edustajien äänet:");
+      for (const v of VOTE_ORDER) {
+        const names = list.filter((e) => fiv(e.kayttaytyminen) === v).map((e) => `${e.etunimi} ${e.sukunimi}${group ? "" : ` (${fiv(e.edkryhmalyhenne)})`}`);
+        if (names.length) out.push(`${v} (${names.length}): ${names.join(", ")}`);
+      }
+    }
+  }
+  if (a.puhemies?.sukunimi) out.push("", `Puhemiehenä ${a.puhemies.etunimi} ${a.puhemies.sukunimi}; puhemies ei osallistu äänestykseen.`);
+  out.push("", `Tiedot: ${voteApiUrl(a.id)}`);
+  if (doc) out.push(`Asian käsittely: ${matterWebUrl(doc)}`);
+  out.push(VOTE_SOURCE);
+  return out.join("\n");
+}
+
+async function eduskunnanAanestykset(args) {
+  const person = parsePerson(args.edustaja);
+  const id = String(args.aanestys ?? "").trim();
+  if (id) {
+    const m = id.match(VOTE_ID_RE);
+    if (!m) throw new UserError("Äänestyksen tunnus on muotoa vuosi-istunto-äänestys, esim. 2026-104-1.");
+    const a = await fetchVote(`${m[1]}-${+m[2]}-${+m[3]}`);
+    if (!a) throw new UserError(`Äänestystä ${id} ei löytynyt.`);
+    return clip(voteDetail(a, { person, group: args.ryhma, all: args.kaikki_edustajat === true }));
+  }
+
+  if (args.asia) {
+    const tunnus = asTunnus(args.asia, "asia");
+    const list = await fetchMatterVotes(tunnus);
+    if (!list.length) return [`Asiassa ${tunnus} ei ole täysistunnon äänestyksiä Eduskunnan avoimessa datassa (asia voi olla ratkaistu ilman äänestystä).`, `Asian käsittely: ${matterWebUrl(tunnus)}`, VOTE_SOURCE].join("\n");
+    list.sort((x, y) => (String(x.aanestysalkuaika) < String(y.aanestysalkuaika) ? -1 : 1));
+    const out = [`${tunnus}: ${list.length} ${list.length === 1 ? "äänestys" : "äänestystä"} täysistunnossa (vanhimmasta uusimpaan).`, ""];
+    for (const a of list.slice(0, 60)) {
+      out.push(voteSummaryLine(a, person));
+      const ho = (a.hallitusoppositioJakaumat ?? []).map((j) => `${lc1(fiv(j.nimi))} ${tally(j)}`).join("; ");
+      if (ho) out.push(`  ${ho}`);
+    }
+    if (list.length > 60) out.push(`… ja ${list.length - 60} muuta.`);
+    out.push("", "Yksittäisen äänestyksen ryhmittäiset tulokset ja edustajien äänet: aanestys-parametrilla (tunnus).", `Asian käsittely: ${matterWebUrl(tunnus)}`, VOTE_SOURCE);
+    return clip(out.join("\n"));
+  }
+
+  const q = String(args.hakusana ?? "").trim();
+  const from = args.alkaen ? asIsoDate(args.alkaen, "alkaen") : null;
+  const to = args.asti ? asIsoDate(args.asti, "asti") : null;
+  if (!q && !from && !to && !person) throw new UserError("Anna aanestys (tunnus), asia (esim. HE 151/2026 vp), hakusana, edustaja tai aikaväli.");
+  const page = Math.max(1, Number(args.sivu) || 1);
+  const { total, votes } = await searchVotes({ query: q || undefined, from, to, person, start: (page - 1) * 10, size: 10 });
+  if (!votes.length) return page > 1 ? "Ei enempää tuloksia." : "Ei äänestyksiä näillä ehdoilla.";
+  const crit = [q && `hakusana "${q}"`, person && `edustaja ${[person.first, person.last].filter(Boolean).join(" ")}`, (from || to) && `${from ? fmtDate(from) : ""}–${to ? fmtDate(to) : ""}`].filter(Boolean).join(", ");
+  const out = [`Täysistunnon äänestykset (${crit}): ${total} osumaa, sivu ${page}, uusimmasta vanhimpaan.`, ""];
+  for (const a of votes) out.push(voteSummaryLine(a, person));
+  if (total > page * 10) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  out.push("", "Yksittäisen äänestyksen ryhmittäiset tulokset ja edustajien äänet: aanestys-parametrilla.", VOTE_SOURCE);
+  return clip(out.join("\n"));
+}
+
+// ---------- Kirjalliset kysymykset ----------
+
+const QUESTION_TEXT_MAX = 12_000;
+
+async function kirjallinenKysymys(args) {
+  const raw = String(args.kysymys ?? "").trim();
+  const t0 = asTunnus(/^\d/.test(raw) ? `KK ${raw}` : raw, "kysymys");
+  const tunnus = t0.replace(/^KKV /, "KK ");
+  if (!tunnus.startsWith("KK ")) throw new UserError("Anna kirjallisen kysymyksen tunnus, esim. \"KK 300/2026 vp\".");
+  const answerTunnus = tunnus.replace(/^KK /, "KKV ");
+  const [m, qMeta, aMeta] = await Promise.all([fetchMatter(tunnus, MATTER_TTL), fetchDocMeta(tunnus, DOC_TTL), fetchDocMeta(answerTunnus, DOC_TTL)]);
+  if (!m && !qMeta) throw new UserError(`Kysymystä ${tunnus} ei löytynyt Eduskunnan avoimesta datasta.`);
+
+  const out = [`${tunnus} ${String(qMeta?.nimeketeksti ?? fi(m?.nimeke) ?? "").replace(/\s+/g, " ").trim()}`];
+  const who = qMeta?.toimijaLaatija?.henkilo;
+  const info = [];
+  if (who?.nimi) info.push(`Kysyjä: ${who.nimi}${who.eduskuntaryhma?.nimi ? ` (${who.eduskuntaryhma.nimi})` : ""}`);
+  if (qMeta?.laadintapvm) info.push(`päivätty ${fmtDate(qMeta.laadintapvm)}`);
+  if (info.length) out.push(info.join(", ") + ".");
+  const st = [fi(m?.tila) && `Tila: ${fi(m.tila)}`, fi(m?.kokonaispaatosnimi) && `lopputulos: ${lc1(fi(m.kokonaispaatosnimi))}`, fi(m?.viimeisinKasittelyvaihe) && `viimeisin vaihe: ${lc1(fi(m.viimeisinKasittelyvaihe))}`].filter(Boolean);
+  if (st.length) out.push(st.join(", ") + ".");
+  out.push(`Lähde: ${matterWebUrl(tunnus)} (Eduskunnan avoin data, CC BY 4.0)`);
+
+  if (args.vain_vastaus !== true && qMeta && qMeta.htmlSaatavilla !== false) {
+    const s = await loadEdkDoc({ asiakirja: tunnus });
+    const get = await edkParas(s, 0, s.base.nParas);
+    const paras = [];
+    for (let i = 0; i < s.base.nParas; i++) paras.push(get(i).t);
+    let text = paras.join("\n\n").trim();
+    if (text.length > QUESTION_TEXT_MAX) text = `${text.slice(0, QUESTION_TEXT_MAX)}\n… (katkaistu; koko teksti eduskunnan_asiakirja-työkalulla)`;
+    out.push("", "Kysymys:", text);
+  }
+
+  if (aMeta) {
+    out.push("", `Vastaus ${answerTunnus}${aMeta.laadintapvm ? `, päivätty ${fmtDate(aMeta.laadintapvm)}` : ""}:`);
+    let text = null;
+    if (aMeta.htmlSaatavilla) {
+      const s = await loadEdkDoc({ asiakirja: answerTunnus });
+      const get = await edkParas(s, 0, s.base.nParas);
+      const paras = [];
+      for (let i = 0; i < s.base.nParas; i++) paras.push(get(i).t);
+      text = paras.join("\n\n").trim();
+    } else {
+      const pdf = await fetchDocPdfText(aMeta.edktunnus).catch(() => null);
+      text = pdf?.text ?? null;
+      if (text) out.push("(Teksti on purettu PDF:stä; rivitys voi poiketa alkuperäisestä.)");
+    }
+    if (text) {
+      if (text.length > QUESTION_TEXT_MAX) text = `${text.slice(0, QUESTION_TEXT_MAX)}\n… (katkaistu)`;
+      out.push(text);
+    } else out.push("(Vastauksen tekstiä ei saatu.)");
+    out.push(`Vastausasiakirja: ${docWebUrl(aMeta.edktunnus)}`);
+  } else {
+    out.push("", "Vastausta ei ole vielä Eduskunnan avoimessa datassa. Vastaus annetaan 21 päivän kuluessa siitä, kun kysymys toimitettiin valtioneuvostolle (eduskunnan työjärjestys 27 § 2 mom.).");
+  }
   return clip(out.join("\n"));
 }
 
@@ -2301,6 +2557,8 @@ const HANDLERS = {
   eduskuntakasittely: eduskuntakasittely,
   eduskunnan_asiakirja: eduskunnanAsiakirja,
   hae_eduskunnan_asiakirjoja: haeEduskunnanAsiakirjoja,
+  eduskunnan_aanestykset: eduskunnanAanestykset,
+  kirjallinen_kysymys: kirjallinenKysymys,
   hae_lainvalmisteluhankkeita: haeLainvalmisteluhankkeita,
   lainvalmisteluhanke: lainvalmisteluhanke,
   lainvalmistelun_asiakirja: lainvalmistelunAsiakirja,

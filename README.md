@@ -22,7 +22,9 @@ Claude-liitin (MCP-palvelin), joka hakee Suomen säädösten sanatarkan tekstin,
 | `lainvalmistelun_asiakirja` | Hankkeen asiakirjan teksti (PDF tai Word) osina tai hakusanan osumat |
 | `eduskuntakasittely` | Asian (esim. HE) käsittely eduskunnassa: tila ja lopputulos, mietintö, lausunnot, eduskunnan vastaus, lakiehdotusten päätökset ja säädösnumerot |
 | `eduskunnan_asiakirja` | Mietinnön, lausunnon tai eduskunnan vastauksen sisällys ja päätösosa; lisäksi pykälän perustelut ja ehdotettu tai hyväksytty sanamuoto, yksi lohko tai sanahaku |
-| `hae_eduskunnan_asiakirjoja` | Mietintöjen, lausuntojen ja eduskunnan vastausten haku tekstin sanalla, valiokunnalla ja vuosilla |
+| `hae_eduskunnan_asiakirjoja` | Mietintöjen, lausuntojen, eduskunnan vastausten ja kirjallisten kysymysten haku tekstin sanalla, valiokunnalla, kysyjällä ja vuosilla |
+| `eduskunnan_aanestykset` | Täysistunnon äänestykset: tulos, hallitus- ja oppositioryhmien ja eduskuntaryhmien jakaumat, ryhmästään poikenneet, edustajan ääni; haku tunnuksella, asialla, hakusanalla, edustajalla ja aikavälillä |
+| `kirjallinen_kysymys` | Kirjallinen kysymys ja ministerin vastaus tekstinä (vastaus puretaan tarvittaessa PDF:stä), kysyjä, päivät ja tila |
 | `hae_ratkaisuja` | Tietosuojavaltuutetun, eduskunnan oikeusasiamiehen tai oikeuskanslerin ratkaisut otsikolla, asiasanalla tai vuosilla |
 | `hae_ratkaisu` | Yhden ratkaisun tiedot ja koko teksti (PDF-ratkaisuista teksti puretaan) |
 
@@ -47,6 +49,8 @@ Kaikissa tekstityökaluissa:
 - Haku: `/akn/fi/act/statute-consolidated/list?titleContains=…&langAndVersion=fin@latest`
 - Hallituksen esitykset: `/akn/fi/doc/government-proposal/{vuosi}/{numero}/fin@` (välimuisti 30 vrk)
 - Eduskunnan asiakirjat: `https://api.eduskunta.fi/api/v1` (Eduskunnan avoin data, OpenAPI-kuvaus `https://api.eduskunta.fi/openapi.json`). Asia ja asiakirjan tunnistus haulla `POST /search` (`stringValue`-ehto tunnukselle), teksti `GET /asiakirjat/edktunnus/{edktunnus}/html`. Rajapinta sallii 180 GET- ja 90 POST-pyyntöä minuutissa IP-osoitetta kohden; vastaukset välimuistitetaan (asia 6 h, asiakirjan hakemisto 7 vrk).
+- Äänestykset: `GET /taysistunnot/aanestykset/{vuosi-istunto-numero}` (yksi äänestys edustajineen), `GET /taysistunnot/asian-aanestykset/{tunnus}` (asian äänestykset) ja `POST /search` kategorialla `aanestys` (lajittelu `aanestysalkuaika`, aikaväli `aanestysalkuaika`, edustaja sisäkkäisellä ehdolla `aanestystapahtumat`). Eduskunnan verkkosivuilla ei löytynyt äänestyksen omaa osoitetta, joten lähteeksi annetaan rajapinnan osoite ja asian sivu. Ryhmästään poikenneet lasketaan äänestystiedoista (ryhmän enemmistö jaa, ei tai tyhjä; poissaoloja ei lasketa).
+- Kirjalliset kysymykset: asiakirjatyyppi `Kirjallinen kysymys` (KK) ja vastaus `Vastaus kirjalliseen kysymykseen` (KKV). Kysyjä `toimijaLaatija.henkilo.nimi`. Vastauksista ei yleensä ole HTML-muotoa, joten teksti puretaan PDF:stä (`/asiakirjat/edktunnus/{edktunnus}/pdf`, unpdf) ja välimuistitetaan 30 vrk.
 - Työehtosopimukset: `/akn/fi/doc/collective-agreement-general-applicability-decision/{vuosi}/{numero}/fin@` (yleissitovuuspäätös, metatiedoissa sopimusversiot) ja sopimus PDF:nä `…/fin@/collectiveAgreement/{tiedosto}.pdf`. Kaikkien päätösten luettelo (n. 210) muodostetaan listauksesta ja päätösten metatiedoista ja pidetään välimuistissa vuorokauden; ensimmäinen haku kestää useita sekunteja.
 - Viranomaisten määräykset: `/akn/fi/doc/authority-regulation/{viranomainen}/{vuosi}/{numero}/fin@`, teksti `…/main.pdf`. Tunnisteessa on viranomainen, koska vuodesta 2025 numerointi on viranomaiskohtainen.
 - PDF-tekstit puretaan sivuittain (unpdf) ja tallennetaan välimuistiin 30 vuorokaudeksi.
