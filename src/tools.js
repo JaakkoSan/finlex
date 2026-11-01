@@ -32,6 +32,7 @@ import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterI
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
+import { FEEDS, TiedoteError, feedItems, itemText } from "./tiedotteet.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -355,6 +356,29 @@ export const TOOLS = [
     },
   },
   {
+    name: "viranomaistiedotteet",
+    description:
+      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu) ja Verohallinto (uutiset ja syventävät vero-ohjeet). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet tai kaikki (oletus). Useita pilkulla erotettuna." },
+        hakusana: { type: "string", description: "Sana otsikosta tai tiivistelmästä, esim. \"kosmet\" tai \"arvonlisävero\". Valinnainen." },
+        alkaen: { type: "string", description: "Tiedotteet alkaen (vvvv-kk-pp). Valinnainen." },
+        enintaan: { type: "integer", description: "Montako näytetään (oletus 20, enintään 60)." },
+      },
+    },
+  },
+  {
+    name: "viranomaistiedote",
+    description: "Palauttaa Verohallinnon tai Lupa- ja valvontaviraston tiedotteen tekstin osoitteella (viranomaistiedotteet-työkalun tuloksesta).",
+    inputSchema: {
+      type: "object",
+      properties: { osoite: { type: "string", description: "Tiedotteen osoite (vero.fi tai sttinfo.fi)." } },
+      required: ["osoite"],
+    },
+  },
+  {
     name: "hae_lainvalmisteluhankkeita",
     description:
       "Hakee ministeriöiden lainvalmistelu- ja muita hankkeita valtioneuvoston Hankeikkunasta: hakusana, ministeriö, tila, valmisteluvaihe, hallituksen esitys tai asetus, asettamispäivä. lausuntokierros_auki: true listaa hankkeet, joiden lausuntokierros on nyt käynnissä, määräajan mukaan. Palauttaa hanketunnukset (esim. STM006:00/2020), vaiheen, lausuntokierrokset ja HE-numerot. Lähde: Hankeikkunan avoin rajapinta.",
@@ -435,6 +459,8 @@ const TITLES = {
   tyoehtosopimus: "Työehtosopimus",
   hae_viranomaismaarayksia: "Hae viranomaisten määräyksiä",
   viranomaismaarays: "Viranomaisen määräys",
+  viranomaistiedotteet: "Viranomaisten tiedotteet",
+  viranomaistiedote: "Viranomaisen tiedote",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -1740,6 +1766,71 @@ async function kirjallinenKysymys(args) {
   return clip(out.join("\n"));
 }
 
+// ---------- Viranomaisten tiedotteet ----------
+
+const TIEDOTE_MAX = 60;
+const TIEDOTE_TEXT_MAX = 15_000;
+
+async function viranomaistiedotteet(args) {
+  const want = String(args.viranomainen ?? "kaikki").trim().toLowerCase();
+  const keys = want === "kaikki" ? Object.keys(FEEDS) : want.split(/[,\s]+/).filter(Boolean);
+  for (const k of keys) if (!FEEDS[k]) throw new UserError(`viranomainen: ${Object.keys(FEEDS).join(", ")} tai kaikki.`);
+  const from = args.alkaen ? asIsoDate(args.alkaen, "alkaen") : null;
+  const q = String(args.hakusana ?? "").trim().toLowerCase();
+  const max = Math.min(TIEDOTE_MAX, Math.max(1, Number.parseInt(args.enintaan, 10) || 20));
+  const results = await Promise.all(keys.map((k) => feedItems(k).then((items) => ({ k, items })).catch((e) => ({ k, items: [], err: e?.message ?? String(e) }))));
+  let all = results.flatMap((r) => r.items);
+  if (from) all = all.filter((i) => i.date && i.date.slice(0, 10) >= from);
+  if (q) all = all.filter((i) => `${i.title} ${i.summary ?? ""}`.toLowerCase().includes(q));
+  all.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+  const failed = results.filter((r) => r.err);
+  const span = results
+    .filter((r) => r.items.length)
+    .map((r) => {
+      const ds = r.items.map((i) => i.date).filter(Boolean).sort();
+      return `${FEEDS[r.k].short} ${r.items.length} (alkaen ${ds.length ? fmtDate(ds[0].slice(0, 10)) : "?"})`;
+    })
+    .join(", ");
+  const crit = [q && `hakusana "${args.hakusana}"`, from && `alkaen ${fmtDate(from)}`].filter(Boolean).join(", ");
+  const out = [`Viranomaisten tiedotteet${crit ? ` (${crit})` : ""}: ${all.length} osumaa${all.length > max ? `, näytetään ${max} uusinta` : ""}.`];
+  if (span) out.push(`Syötteissä nyt: ${span}. Syötteet sisältävät vain uusimmat tiedotteet.`);
+  for (const f of failed) out.push(`HUOM: ${FEEDS[f.k].short}-syötettä ei saatu (${f.err}).`);
+  out.push("");
+  for (const i of all.slice(0, max)) {
+    out.push(`${i.date ? fmtDate(i.date.slice(0, 10)) : "?"} · ${FEEDS[i.source].short} · ${i.title}`);
+    if (i.summary) out.push(`  ${i.summary.length > 400 ? `${i.summary.slice(0, 400)}…` : i.summary}`);
+    out.push(`  ${i.link}`);
+  }
+  if (!all.length) out.push("Ei osumia. Syötteissä on vain uusimmat tiedotteet; vanhempia etsi viraston verkkosivuilta.");
+  out.push(
+    "",
+    "Veron ja LVV:n tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite). Fimean ja Tukesin tiedotteet luetaan viraston sivulta.",
+    "Lähteet: Fimea, Tukes ja Verohallinto (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).",
+  );
+  return clip(out.join("\n"));
+}
+
+async function viranomaistiedote(args) {
+  const url = String(args.osoite ?? "").trim();
+  if (!/^https:\/\//.test(url)) throw new UserError("Anna tiedotteen osoite viranomaistiedotteet-työkalun tuloksesta.");
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+  if (/(^|\.)fimea\.fi$|(^|\.)tukes\.fi$/.test(host)) {
+    return `Fimean ja Tukesin sivut eivät salli automaattista hakua, joten tiedotteen teksti on luettava viraston sivulta: ${url}`;
+  }
+  const t = await itemText(url);
+  if (!t) throw new UserError("Tekstin haku onnistuu vain Verohallinnon (vero.fi) ja LVV:n (sttinfo.fi) tiedotteille. Tarkista osoite.");
+  let text = t.text;
+  if (text.length > TIEDOTE_TEXT_MAX) text = `${text.slice(0, TIEDOTE_TEXT_MAX)}\n… (katkaistu; koko teksti lähteessä)`;
+  const src = host.endsWith("vero.fi") ? "Verohallinto" : "Lupa- ja valvontavirasto, STT Info";
+  return [t.title, t.date, "", text, "", `Lähde: ${url} (${src})`].filter((l, i) => l || i > 1).join("\n");
+}
+
 // ---------- Viranomaisratkaisut ----------
 
 function asSource(v) {
@@ -2566,6 +2657,8 @@ const HANDLERS = {
   tyoehtosopimus: tyoehtosopimus,
   hae_viranomaismaarayksia: haeViranomaismaarayksia,
   viranomaismaarays: viranomaismaarays,
+  viranomaistiedotteet,
+  viranomaistiedote,
 };
 
 export async function callTool(name, args = {}) {
@@ -2580,6 +2673,8 @@ export async function callTool(name, args = {}) {
         ? e.message
         : e instanceof EduskuntaError
           ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof TiedoteError
+          ? `Tiedotteiden haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof HankeikkunaError
           ? `Hankeikkunan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof FinlexError

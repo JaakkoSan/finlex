@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 21, "tools/list (21 työkalua)");
+check(list.result?.tools?.length === 23, "tools/list (23 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -57,6 +57,9 @@ const cases = [
   ["eduskunnan_aanestykset", { aanestys: "2026-71-3" }, (t) => t.includes("Tulos: jaa 100, ei 22, tyhjiä 52, poissa 25") && t.includes("Hallitusryhmät")],
   ["eduskunnan_aanestykset", { asia: "HE 151/2026 vp", edustaja: "Petteri Orpo" }, (t) => t.includes("2026-104-1") && t.includes("Petteri Orpo (kok)")],
   ["eduskunnan_aanestykset", { hakusana: "alkoholilain" }, (t) => t.includes("osumaa") && t.includes("HE 131/2025 vp")],
+  ["viranomaistiedotteet", {}, (t) => t.includes("Syötteissä nyt:") && t.includes("Fimea") && t.includes("LVV")],
+  ["viranomaistiedotteet", { viranomainen: "tukes", hakusana: "kosmet" }, (t) => t.includes("Tukes ·") && t.includes("tukes.fi/-/")],
+  ["viranomaistiedote", { osoite: "https://www.sttinfo.fi/tiedote/72460137/perintayhtio-ei-voi-peria-riitautettua-saatavaa?lang=fi" }, (t) => t.includes("Perintäyhtiö ei voi periä") && !t.includes("Yhteyshenkilöt")],
   ["kirjallinen_kysymys", { kysymys: "KK 365/2026 vp" }, (t) => t.includes("Kysyjä: Mia Laiho") && t.includes("Kysymys:") && t.includes("Vastaus KKV 365/2026 vp")],
   ["hae_eduskunnan_asiakirjoja", { tyyppi: "kysymys", hakusana: "kauneudenhoito" }, (t) => t.includes("KK 365/2026 vp") && t.includes("Kysyjä:")],
   ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp" }, (t) => t.includes("VALIOKUNNAN PÄÄTÖSESITYS") && t.includes("tavallisen lain säätämisjärjestyksessä")],
