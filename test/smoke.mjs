@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 23, "tools/list (23 työkalua)");
+check(list.result?.tools?.length === 24, "tools/list (24 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -60,6 +60,13 @@ const cases = [
   ["viranomaistiedotteet", {}, (t) => t.includes("Syötteissä nyt:") && t.includes("Fimea") && t.includes("LVV")],
   ["viranomaistiedotteet", { viranomainen: "tukes", hakusana: "kosmet" }, (t) => t.includes("Tukes ·") && t.includes("tukes.fi/-/")],
   ["viranomaistiedote", { osoite: "https://www.sttinfo.fi/tiedote/72460137/perintayhtio-ei-voi-peria-riitautettua-saatavaa?lang=fi" }, (t) => t.includes("Perintäyhtiö ei voi periä") && !t.includes("Yhteyshenkilöt")],
+  ["hae_vero_ohjeita", { hakusana: "vuokratulojen verotus" }, (t) => t.includes("Vuokratulojen verotus") && t.includes("https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/")],
+  ["hae_vero_ohjeita", { tyyppi: "kvl", jarjestys: "uusin" }, (t) => t.includes("KVL:n ennakkoratkaisu") && t.includes("vero.fi/")],
+  ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/" }, (t) => t.includes("Diaarinumero: VH/") && t.includes("Sisällysluettelo") && t.includes("3.7.3 Korjausmenot")],
+  ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", luku: "3.7.3" }, (t) => t.includes("3.7.3 Korjausmenot asunnon tai rakennuksen hankinnan yhteydessä") && t.includes("KHO 2000:51") && !t.includes("3.7.4 Oman")],
+  ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", luku: "3.9.2" }, (t) => t.includes("3.9.2 Poiston määrä ja edellytykset") && !t.includes("3.9.3 Vastikkeellisesti")],
+  ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", luku: "3.9" }, (t) => t.includes("3.9.1 Yleistä") && t.includes("3.9.6 Lisäpoisto") && !t.includes("3.10 Maatilan")],
+  ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", hakusana: "remont" }, (t) => t.includes("3.7.3 Korjausmenot") && t.includes("osumaa")],
   ["kirjallinen_kysymys", { kysymys: "KK 365/2026 vp" }, (t) => t.includes("Kysyjä: Mia Laiho") && t.includes("Kysymys:") && t.includes("Vastaus KKV 365/2026 vp")],
   ["hae_eduskunnan_asiakirjoja", { tyyppi: "kysymys", hakusana: "kauneudenhoito" }, (t) => t.includes("KK 365/2026 vp") && t.includes("Kysyjä:")],
   ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp" }, (t) => t.includes("VALIOKUNNAN PÄÄTÖSESITYS") && t.includes("tavallisen lain säätämisjärjestyksessä")],

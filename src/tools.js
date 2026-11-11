@@ -32,7 +32,7 @@ import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterI
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
-import { FEEDS, TiedoteError, feedItems, itemText } from "./tiedotteet.js";
+import { FEEDS, TiedoteError, feedItems, itemText, veroSearch, veroGuide, VERO_TYPES } from "./tiedotteet.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -371,11 +371,33 @@ export const TOOLS = [
   },
   {
     name: "viranomaistiedote",
-    description: "Palauttaa Verohallinnon tai Lupa- ja valvontaviraston tiedotteen tekstin osoitteella (viranomaistiedotteet-työkalun tuloksesta).",
+    description:
+      "Palauttaa Verohallinnon tai Lupa- ja valvontaviraston tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen.",
     inputSchema: {
       type: "object",
-      properties: { osoite: { type: "string", description: "Tiedotteen osoite (vero.fi tai sttinfo.fi)." } },
+      properties: {
+        osoite: { type: "string", description: "Osoite (vero.fi tai sttinfo.fi), esim. hae_vero_ohjeita- tai viranomaistiedotteet-työkalun tuloksesta." },
+        luku: { type: "string", description: "Vero-ohjeen luku numerolla (\"3.7.3\", \"3.9\") tai otsikon sanalla (\"Poistot\"). Luku palautetaan alalukuineen. Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanonta, jota etsitään vero-ohjeen tekstistä; palauttaa luvut, joissa se esiintyy, otteineen. Käytä sanan vartaloa (esim. \"remont\"). Valinnainen." },
+      },
       required: ["osoite"],
+    },
+  },
+  {
+    name: "hae_vero_ohjeita",
+    description:
+      "Hakee Verohallinnon syventäviä vero-ohjeita (sekä halutessa Verohallinnon päätöksiä, kannanottoja ja keskusverolautakunnan ennakkoratkaisuja) koko arkistosta otsikon ja tekstin sanoilla vero.fi:n hakurajapinnasta. Palauttaa otsikon, päivän, osoitteen ja otteen. Lue ohje tai sen luku viranomaistiedote-työkalulla (osoite, luku, hakusana).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sanat, esim. \"vuokratulojen verotus\" tai \"remontti\". Tyhjä = uusimmat." },
+        tyyppi: { type: "string", description: "ohje (oletus), paatos, kannanotto, kvl tai kaikki. Useita pilkulla erotettuna." },
+        jarjestys: { type: "string", enum: ["osuvuus", "uusin", "vanhin", "nimi"], description: "osuvuus (oletus, tai uusin kun hakusana puuttuu), uusin, vanhin tai nimi." },
+        vuosi: { type: "integer", description: "Julkaisuvuosi. Valinnainen." },
+        vanhat_versiot: { type: "boolean", description: "Näytä myös korvatut ohjeversiot. Oletus: ei." },
+        kieli: { type: "string", enum: ["fi", "sv"], description: "fi (oletus) tai sv." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla 10 tulosta." },
+      },
     },
   },
   {
@@ -461,6 +483,7 @@ const TITLES = {
   viranomaismaarays: "Viranomaisen määräys",
   viranomaistiedotteet: "Viranomaisten tiedotteet",
   viranomaistiedote: "Viranomaisen tiedote",
+  hae_vero_ohjeita: "Hae vero-ohjeita",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -1804,7 +1827,7 @@ async function viranomaistiedotteet(args) {
   if (!all.length) out.push("Ei osumia. Syötteissä on vain uusimmat tiedotteet; vanhempia etsi viraston verkkosivuilta.");
   out.push(
     "",
-    "Veron ja LVV:n tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite). Fimean ja Tukesin tiedotteet luetaan viraston sivulta.",
+    "Veron ja LVV:n tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite). Fimean ja Tukesin tiedotteet luetaan viraston sivulta. Kaikki syventävät vero-ohjeet löytyvät hae_vero_ohjeita-työkalulla.",
     "Lähteet: Fimea, Tukes ja Verohallinto (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).",
   );
   return clip(out.join("\n"));
@@ -1823,12 +1846,132 @@ async function viranomaistiedote(args) {
   if (/(^|\.)fimea\.fi$|(^|\.)tukes\.fi$/.test(host)) {
     return `Fimean ja Tukesin sivut eivät salli automaattista hakua, joten tiedotteen teksti on luettava viraston sivulta: ${url}`;
   }
+  if (/(^|\.)vero\.fi$/.test(host) && /\/(syventavat-vero-ohjeet|detaljerade_skatteanvisningar|syventavat_vero-ohjeet)\//i.test(url)) {
+    const g = await veroGuide(url);
+    if (g && g.sections.length) return veroGuideOut(g, args);
+  }
+  if (args.luku || args.hakusana) throw new UserError("luku ja hakusana toimivat vain Verohallinnon syventäville vero-ohjeille (ja päätöksille, kannanotoille ja ennakkoratkaisuille), joissa on numeroidut luvut.");
   const t = await itemText(url);
   if (!t) throw new UserError("Tekstin haku onnistuu vain Verohallinnon (vero.fi) ja LVV:n (sttinfo.fi) tiedotteille. Tarkista osoite.");
   let text = t.text;
   if (text.length > TIEDOTE_TEXT_MAX) text = `${text.slice(0, TIEDOTE_TEXT_MAX)}\n… (katkaistu; koko teksti lähteessä)`;
   const src = host.endsWith("vero.fi") ? "Verohallinto" : "Lupa- ja valvontavirasto, STT Info";
   return [t.title, t.date, "", text, "", `Lähde: ${url} (${src})`].filter((l, i) => l || i > 1).join("\n");
+}
+
+// ---------- Syventävät vero-ohjeet ----------
+
+const secLabel = (x) => `${x.num ? `${x.num} ` : ""}${x.title}`;
+const normLuku = (v) => String(v ?? "").trim().replace(/^luku\s+/i, "").replace(/\.$/, "").trim();
+
+function guideHead(g) {
+  const out = [`${g.title} (Verohallinto)`];
+  for (const [k, v] of g.meta) if (/^(Antopäivä|Diaarinumero|Voimassaolo|Korvaa ohjeen)$/i.test(k)) out.push(`${k}: ${v}`);
+  return out;
+}
+
+function guideToc(g) {
+  return g.sections.map((x) => `${"  ".repeat(Math.max(0, x.level - 2))}${secLabel(x)}`);
+}
+
+/** Luku ja sen alaluvut (seuraavat syvemmän tason otsikot). */
+function guideChapter(g, i) {
+  const base = g.sections[i];
+  const out = [base];
+  for (let j = i + 1; j < g.sections.length && g.sections[j].level > base.level; j++) out.push(g.sections[j]);
+  return out;
+}
+
+function veroGuideOut(g, args) {
+  const src = `Lähde: ${g.url} (Verohallinto). Ohje kuvaa Verohallinnon tulkintaa; se ei ole lakia. Tarkista voimassaolo ohjeen sivulta.`;
+  if (args.luku) {
+    const want = normLuku(args.luku);
+    let i = g.sections.findIndex((x) => x.num === want);
+    let note = null;
+    if (i < 0) {
+      const lw = want.toLowerCase();
+      // Paras osuma ensin: sama otsikko, otsikon alku, sanan alku, muu kohta.
+      const rank = (t) => (t === lw ? 0 : t.startsWith(lw) ? 1 : new RegExp(`(^|[\\s(-])${lw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(t) ? 2 : t.includes(lw) ? 3 : 9);
+      const cand = g.sections
+        .map((x, k) => [x, k, rank(x.title.toLowerCase())])
+        .filter((c) => c[2] < 9)
+        .sort((a, b) => a[2] - b[2] || a[1] - b[1]);
+      if (cand.length) {
+        i = cand[0][1];
+        if (cand.length > 1) note = `Otsikkoon "${want}" osui myös: ${cand.slice(1, 8).map(([x]) => secLabel(x)).join("; ")}.`;
+      }
+    }
+    if (i < 0) return [...guideHead(g), "", `Lukua "${args.luku}" ei löytynyt. Sisällysluettelo:`, ...guideToc(g), "", src].join("\n");
+    const parts = guideChapter(g, i);
+    const out = [...guideHead(g), ""];
+    if (note) out.push(note, "");
+    for (const x of parts) out.push(`${secLabel(x)}`, x.text || "(ei tekstiä ennen alalukuja)", "");
+    out.push(src);
+    return clip(out.join("\n"));
+  }
+  if (args.hakusana) {
+    const q = String(args.hakusana).trim().toLowerCase();
+    if (!q) throw new UserError("Anna hakusana.");
+    const hits = [];
+    const scan = (label, text) => {
+      const low = text.toLowerCase();
+      const pos = [];
+      for (let p = low.indexOf(q); p >= 0 && pos.length < 50; p = low.indexOf(q, p + q.length)) pos.push(p);
+      if (!pos.length) return;
+      const ex = pos.slice(0, 2).map((p) => {
+        const a = Math.max(0, p - 160);
+        const b = Math.min(text.length, p + q.length + 160);
+        return `${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`;
+      });
+      hits.push({ label, n: pos.length, ex });
+    };
+    scan("Johdanto ja muutokset", g.intro);
+    for (const x of g.sections) scan(secLabel(x), `${x.title}\n${x.text}`);
+    const out = [...guideHead(g), "", `Hakusana "${args.hakusana}": ${hits.reduce((s, h) => s + h.n, 0)} osumaa ${hits.length} luvussa.`];
+    for (const h of hits.slice(0, 30)) {
+      out.push("", `${h.label} (${h.n})`);
+      for (const e of h.ex) out.push(`  ${e}`);
+    }
+    if (hits.length > 30) out.push("", `… ja ${hits.length - 30} muuta lukua.`);
+    if (!hits.length) out.push("Ei osumia. Haku on kirjaimellinen: kokeile sanan vartaloa.");
+    out.push("", "Lue luku sanatarkasti parametrilla luku (esim. \"3.7.3\").", src);
+    return clip(out.join("\n"));
+  }
+  const total = g.sections.reduce((s, x) => s + x.text.length, 0);
+  const out = [...guideHead(g), ""];
+  if (g.intro) out.push(g.intro, "");
+  if (total <= TIEDOTE_TEXT_MAX) {
+    for (const x of g.sections) out.push(secLabel(x), x.text, "");
+  } else {
+    out.push(`Sisällysluettelo (ohjeessa noin ${Math.round(total / 1000)} 000 merkkiä; lue luku parametrilla luku, esim. "${g.sections.find((x) => x.text && x.num)?.num ?? "1"}", tai etsi parametrilla hakusana):`, ...guideToc(g), "");
+  }
+  out.push(src);
+  return clip(out.join("\n"));
+}
+
+async function haeVeroOhjeita(args) {
+  const want = String(args.tyyppi ?? "ohje").trim().toLowerCase();
+  const keys = want === "kaikki" ? Object.keys(VERO_TYPES) : want.split(/[,\s]+/).filter(Boolean);
+  for (const k of keys) if (!VERO_TYPES[k]) throw new UserError(`tyyppi: ${Object.keys(VERO_TYPES).join(", ")} tai kaikki.`);
+  const query = String(args.hakusana ?? "").trim();
+  const SORT = { osuvuus: 0, uusin: 1, vanhin: 2, nimi: 3 };
+  const sort = args.jarjestys ? SORT[args.jarjestys] : query ? 0 : 1;
+  if (sort === undefined) throw new UserError("jarjestys: osuvuus, uusin, vanhin tai nimi.");
+  const page = asPage(args.sivu);
+  const lang = args.kieli === "sv" ? "sv" : "fi";
+  const year = args.vuosi ? asYear(args.vuosi) : undefined;
+  const r = await veroSearch({ query, types: keys.map((k) => VERO_TYPES[k].id), lang, sort, page, pageSize: 10, all: !!args.vanhat_versiot, year });
+  const names = keys.map((k) => VERO_TYPES[k].name).join(", ");
+  const out = [`Verohallinnon haku (${names}${query ? `, "${query}"` : ""}${year ? `, vuosi ${year}` : ""}): ${r.total} osumaa, sivu ${page}.`];
+  if (!r.hits.length) out.push("Ei osumia. Kokeile toista sanaa tai sanan perusmuotoa.");
+  for (const h of r.hits) {
+    out.push("", `${h.date ? fmtDate(h.date) : "?"} · ${h.type ?? ""}${h.latest ? "" : " · KORVATTU VERSIO"} · ${h.title}`);
+    if (h.excerpt) out.push(`  ${h.excerpt.length > 300 ? `${h.excerpt.slice(0, 300)}…` : h.excerpt}`);
+    out.push(`  ${h.url}`);
+  }
+  if (r.hasMore) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  out.push("", "Lue ohje, sen luku tai hakusanan osumat viranomaistiedote-työkalulla (osoite, luku, hakusana).", "Lähde: Verohallinto, vero.fi-haku (https://www.vero.fi/syventavat-vero-ohjeet/).");
+  return out.join("\n");
 }
 
 // ---------- Viranomaisratkaisut ----------
@@ -2659,6 +2802,7 @@ const HANDLERS = {
   viranomaismaarays: viranomaismaarays,
   viranomaistiedotteet,
   viranomaistiedote,
+  hae_vero_ohjeita: haeVeroOhjeita,
 };
 
 export async function callTool(name, args = {}) {

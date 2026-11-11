@@ -3,13 +3,17 @@
 // - Tukes: https://tukes.fi/etusivu/-/asset_publisher/j4IpZeX3sdnN/rss (RSS 2.0, vain otsikot)
 // - Verohallinto: https://www.vero.fi/api/rss/news/fi ja /api/rss/preciseinformation/fi (vero.fi/en/About-us/newsroom/news/rss-service)
 // - Lupa- ja valvontavirasto: STT Infon uutishuone, https://www.sttinfo.fi/rss/releases/latest?publisherId=69821631
+// - Verohallinnon haku: https://www.vero.fi/api/search/results (dokumentoitu: vero.fi/globalassets/
+//   tietoa-verohallinnosta/sahkoinen-asiointi/verofi-search-api-documentation.pdf). Vero.fi:n
+//   sisältökuvauksen mukaan ohjeita saa hakea koneellisesti myös rajapinnan kautta ja esittää
+//   ulkoisissa palveluissa; robots.txt ei rajoita (tarkistettu 11.11.2026).
 // Fimean ja Tukesin verkkosivut torjuvat automaattiset haut (403), joten niiden tiedotteista
 // näytetään vain syötteen tiedot. Tiedotteen teksti haetaan vain vero.fi:stä ja sttinfo.fi:stä
 // (robots.txt sallii; STT Info pyytää 1 s viivettä, ja haut välimuistitetaan).
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 
-const USER_AGENT = "finlex-mcp/1.9 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = "finlex-mcp/1.10 (Claude-liitin; Cloudflare Worker)";
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export class TiedoteError extends FinlexError {}
@@ -115,14 +119,18 @@ export async function feedItems(key) {
 function htmlText(s) {
   return decode(
     String(s)
+      .replace(/\s*[\r\n]+\s*/g, " ")
       .replace(/<(script|style|noscript|svg|button)[\s\S]*?<\/\1>/gi, "")
+      // Taulukon rivi yhdelle riville: solut erotetaan pystyviivalla.
+      .replace(/<t([dh])(\s[^>]*)?>([\s\S]*?)<\/t\1>/gi, (m, a, b, c) => `<t${a}>${c.replace(/<\/?(p|div)[^>]*>|<br\s*\/?>/gi, " ")}</t${a}>`)
       .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/t[dh]>/gi, " | ")
       .replace(/<\/(p|h[1-6]|li|div|tr|section)>/gi, "\n")
       .replace(/<li[^>]*>/gi, "- ")
       .replace(/<[^>]+>/g, ""),
   )
     .split("\n")
-    .map((l) => l.replace(/[ \t ]+/g, " ").trim())
+    .map((l) => l.replace(/[ \t ]+/g, " ").trim().replace(/\s*\|$/, ""))
     .filter(Boolean)
     .join("\n");
 }
@@ -166,5 +174,112 @@ export async function itemText(url) {
   }
   if (out && !out.title) out.title = htmlText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").replace(/\s*[-|–]\s*(vero\.fi|STT Info).*$/i, "");
   if (out && out.text) await cachePutJson(key, out, 7 * 86400);
+  return out;
+}
+
+// ---------- Verohallinnon haku ja syventävät vero-ohjeet ----------
+
+const VERO = "https://www.vero.fi";
+// Sivutyypit (typeId) hakurajapinnan dokumentaation mukaan.
+export const VERO_TYPES = {
+  ohje: { id: 7, name: "Syventävä vero-ohje" },
+  paatos: { id: 8, name: "Verohallinnon päätös" },
+  kannanotto: { id: 9, name: "Verohallinnon kannanotto" },
+  kvl: { id: 10, name: "KVL:n ennakkoratkaisu" },
+};
+
+/** Hakee vero.fi:n hausta. Palauttaa { total, hasMore, hits: [{ title, url, date (ISO), type, latest, excerpt, tags }] }. */
+export async function veroSearch({ query = "", types = [7], lang = "fi", sort = 0, page = 1, pageSize = 10, all = false, year } = {}) {
+  const q = new URLSearchParams({ query, language: lang, page: String(page), pageSize: String(pageSize) });
+  for (const t of types) q.append("typeId", String(t));
+  if (sort) q.set("sort", String(sort));
+  if (all) q.set("showAllVersions", "true");
+  if (year) q.set("year", String(year));
+  const body = await get(`${VERO}/api/search/results?${q}`, 3600);
+  if (!body) return { total: 0, hasMore: false, hits: [] };
+  let d;
+  try {
+    d = JSON.parse(body);
+  } catch {
+    throw new TiedoteError("Verohallinnon haku palautti virheellisen vastauksen.", 0);
+  }
+  const iso = (s) => {
+    const m = String(s ?? "").match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+    return m ? `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
+  };
+  const hits = (d.Hits ?? []).map((h) => ({
+    title: decode(h.Title ?? "").trim(),
+    url: h.FriendlyUrl?.startsWith("http") ? h.FriendlyUrl : `${VERO}${h.FriendlyUrl ?? ""}`,
+    date: iso(h.Date),
+    type: h.ContentTypeLocalized ?? h.ContentType ?? null,
+    latest: h.IsLatestVersion !== false,
+    excerpt: h.Text ? htmlText(String(h.Text).replace(/<mark[^>]*>|<\/mark>/g, "")).replace(/\s+/g, " ").trim() : null,
+    tags: h.TagNames ?? [],
+  }));
+  return { total: d.TotalCount ?? hits.length, hasMore: !!d.HasMore, hits };
+}
+
+const AUTHOR_RE = /^(johtava |vanhempi |erikois)?(vero)?(asiantuntija|ylitarkastaja|tarkastaja|lakimies|johtaja|päällikkö|neuvos|ylijohtaja|apulaisjohtaja|ryhmäpäällikkö|ohjaus)/i;
+
+/**
+ * Syventävän vero-ohjeen (tai Verohallinnon päätöksen, kannanoton tai KVL:n ennakkoratkaisun)
+ * rakenne: { title, meta: [[nimi, arvo]], intro, sections: [{ num, title, level, text }] }.
+ * null, jos sivu ei ole tällainen ohjesivu.
+ */
+export async function veroGuide(url) {
+  let u;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:" || !/^(www\.)?vero\.fi$/.test(u.hostname)) return null;
+  u.hash = "";
+  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_ohje=2`;
+  const hit = await cacheGetJson(key);
+  if (hit) return hit;
+  const html = await get(u.href, 0);
+  if (!html) return null;
+  const a = html.indexOf("<article");
+  const e = a >= 0 ? html.indexOf("</article>", a) : -1;
+  if (a < 0 || e < 0) return null;
+  const art = html.slice(a, e);
+  const mb = art.search(/<div class="main-body">/i);
+  if (mb < 0) return null;
+  let body = art.slice(mb).replace(/<div class="main-body">/i, "");
+  const end = body.search(/<div class="contentarea-main">|<div class="page-modified">/i);
+  if (end >= 0) body = body.slice(0, end);
+
+  const title = htmlText(html.match(/<span id="main-heading">([\s\S]*?)<\/span>/i)?.[1] ?? html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "");
+  const meta = [];
+  const pvStart = html.indexOf('<div class="page-version">');
+  let pvHtml = pvStart >= 0 ? html.slice(pvStart, pvStart + 6000) : "";
+  const pvEnd = pvHtml.search(/page-version__info--summary|<article/);
+  if (pvEnd > 0) pvHtml = pvHtml.slice(0, pvEnd);
+  for (const m of pvHtml.matchAll(/<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/gi)) {
+    const k = htmlText(m[1]);
+    const v = htmlText(m[2]).replace(/\s+/g, " ");
+    if (k && v) meta.push([k, v]);
+  }
+
+  const heads = [...body.matchAll(/<h([2-6])[^>]*>([\s\S]*?)<\/h\1>/gi)];
+  const sections = [];
+  const intro = htmlText(body.slice(0, heads[0]?.index ?? body.length));
+  heads.forEach((h, i) => {
+    const t = htmlText(h[2]).replace(/\s+/g, " ").trim();
+    const m = t.match(/^(\d+(?:\.\d+)*)\.?\s+(.+)$/);
+    const chunk = body.slice(h.index + h[0].length, heads[i + 1]?.index ?? body.length);
+    sections.push({ num: m ? m[1] : null, title: m ? m[2] : t, level: Number(h[1]), text: htmlText(chunk) });
+  });
+  // Ohjeen laatijoiden nimet viimeisen luvun lopussa jätetään pois.
+  const last = sections[sections.length - 1];
+  if (last) {
+    const lines = last.text.split("\n");
+    while (lines.length && lines[lines.length - 1].length < 90 && AUTHOR_RE.test(lines[lines.length - 1])) lines.pop();
+    last.text = lines.join("\n");
+  }
+  if (!sections.length && !intro) return null;
+  const out = { title, meta, intro, sections, url: u.href };
+  await cachePutJson(key, out, 86400);
   return out;
 }
