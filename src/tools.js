@@ -33,6 +33,7 @@ import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edk
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
 import { FEEDS, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
+import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, guideList, docPage, findByNumber, guideText, attachmentText, splitGuidePdfs, isExemption } from "./kila.js";
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
@@ -402,6 +403,39 @@ export const TOOLS = [
     },
   },
   {
+    name: "hae_kila_lausuntoja",
+    description:
+      "Hakee kirjanpitolautakunnan (KILA) lausuntoja ja poikkeuslupia (noin 940 kpl, 1974 alkaen) sekä yleisohjeita kirjanpitolautakunta.fi:stä sivuston omalla haulla: hakusana, lausunnon numero, vuosi tai vuodesta vuoteen, tyyppi ja yleisohjeiden voimassaolo. Palauttaa numeron (esim. 1998/1516), päivän, otsikon ja osoitteen. Lue asiakirja kila_lausunto-työkalulla. Sivuston haku painottuu otsikkoon ja asiasanoihin, joten kokeile tarvittaessa useampaa sanaa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana tai sanat, esim. \"leasing\", \"investointiavustus\" tai \"poistot\". Valinnainen." },
+        numero: { type: "string", description: "Lausunnon numero, esim. \"1516\" tai \"1998/1516\". Valinnainen." },
+        vuosi: { type: "integer", description: "Antovuosi. Valinnainen." },
+        alkaen_vuosi: { type: "integer", description: "Annettu aikaisintaan tänä vuonna. Valinnainen." },
+        paattyen_vuosi: { type: "integer", description: "Annettu viimeistään tänä vuonna. Valinnainen." },
+        tyyppi: { type: "string", enum: ["lausunto", "poikkeuslupa", "yleisohje", "kaikki"], description: "kaikki (oletus: lausunnot ja poikkeusluvat sekä hakusanalla voimassa olevat yleisohjeet), lausunto, poikkeuslupa tai yleisohje." },
+        voimassa: { type: "boolean", description: "Yleisohjeet: true = vain voimassa olevat, false = vain aiemmat (korvatut). Oletus tyypillä yleisohje: molemmat." },
+        sivu: { type: "integer", description: "Lausuntojen tulossivu, 1 = ensimmäinen. Sivulla 25 tulosta." },
+      },
+    },
+  },
+  {
+    name: "kila_lausunto",
+    description:
+      "Palauttaa kirjanpitolautakunnan lausunnon, poikkeusluvan tai yleisohjeen sanatarkan tekstin kirjanpitolautakunta.fi:stä numerolla (lausunto, esim. \"1998/1516\") tai osoitteella. Lausunnosta koko teksti lukunumeroineen (hakemus, perustelut, lausunto). Yleisohjeesta (teksti PDF:stä) ilman lisäparametreja sisällysluettelo ja liitteiden luettelo; parametrilla luku yksi luku alalukuineen (esim. \"2.4\" tai \"Jäännösarvo\"), parametrilla hakusana osumat luvuittain ja parametrilla liite liitteen teksti (esim. \"1\" tai \"3a\").",
+    inputSchema: {
+      type: "object",
+      properties: {
+        numero: { type: "string", description: "Lausunnon tai poikkeusluvan numero, esim. \"1516\" tai \"2010/1861\"." },
+        osoite: { type: "string", description: "Asiakirjan osoite hae_kila_lausuntoja-työkalun tuloksesta (https://kirjanpitolautakunta.fi/-/...). Yleisohjeet haetaan osoitteella." },
+        luku: { type: "string", description: "Luku numerolla (\"2.4\", \"3\") tai otsikon sanalla (\"Jäännösarvo\"). Luku palautetaan alalukuineen. Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanonta, jota etsitään tekstistä; palauttaa luvut, joissa se esiintyy, otteineen. Käytä sanan vartaloa (esim. \"leasing\"). Valinnainen." },
+        liite: { type: "string", description: "Yleisohjeen liite numerolla tai tunnuksella, esim. \"1\" tai \"3a\". Liitteet haetaan vain pyydettäessä. Valinnainen." },
+      },
+    },
+  },
+  {
     name: "hae_viranomaisohjeita",
     description:
       "Hakee viranomaisten ohjeita ja linjauksia niiden verkkosivuilta: Traficom (Kyberturvallisuuskeskus: evästeet, sähköisen viestinnän tietoturva ja luottamuksellisuus, sähköinen tunnistaminen ja luottamuspalvelut, kyberturvallisuusohjeet ja -oppaat), tietosuojavaltuutettu (tietosuoja.fi:n ohjeet, esim. käsittelyperusteet, rekisteröidyn oikeudet, kameravalvonta, työelämä), KKV (kuluttaja-asiamiehen linjaukset ja ohjeistukset, kuluttaja-asioiden ohjeet, päätökset) ja PRH (kaupparekisteri, yhdistykset, säätiöt, tavaramerkit, patentit). Haku kohdistuu otsikkoon ja osoitteeseen (KKV:ssa sivujen otsikoihin WordPressin hakurajapinnalla ja päätöksissä osoitteeseen; KKV:n päätöksen voi hakea myös diaarinumerolla). Palauttaa otsikon ja osoitteen; lue ohje viranomaisohje-työkalulla.",
@@ -516,6 +550,8 @@ const TITLES = {
   hae_vero_ohjeita: "Hae vero-ohjeita",
   hae_viranomaisohjeita: "Hae viranomaisten ohjeita",
   viranomaisohje: "Viranomaisen ohje",
+  hae_kila_lausuntoja: "Hae kirjanpitolautakunnan lausuntoja",
+  kila_lausunto: "Kirjanpitolautakunnan lausunto tai yleisohje",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -2299,6 +2335,265 @@ async function viranomaisohje(args) {
   return ohjeHtmlOut(d, args);
 }
 
+// ---------- Kirjanpitolautakunta (KILA) ----------
+
+const KILA_SRC = "Kirjanpitolautakunta, kirjanpitolautakunta.fi";
+const KILA_TEXT_MAX = 40_000;
+const KILA_TYPES = ["lausunto", "poikkeuslupa", "yleisohje", "kaikki"];
+const KILA_NOTE = {
+  lausunto:
+    "Lausunto koskee hakijan kuvaamaa tapausta, ja se perustuu antamisajankohdan säännöksiin. Se kertoo lautakunnan kannan hyvästä kirjanpitotavasta, mutta ei ole lakia; tarkista voimassa oleva laki hae_pykala-työkalulla (kirjanpitolaki 1336/1997).",
+  poikkeuslupa:
+    "Poikkeuslupa myönnetään yksittäistapauksessa määräajaksi (kirjanpitolaki 1336/1997 8 luku 2 § 2 mom.), ja se koskee vain hakijaa. Tarkista voimassa oleva laki hae_pykala-työkalulla (kirjanpitolaki 1336/1997).",
+  yleisohje:
+    "Yleisohje on kirjanpitolautakunnan ohje hyvästä kirjanpitotavasta (kirjanpitolaki 1336/1997 8 luku 2 § 1 mom.), ei lakia. Tarkista voimassaolo (hae_kila_lausuntoja, tyyppi yleisohje) ja lainkohdat hae_pykala-työkalulla.",
+};
+
+function kilaNumber(v) {
+  const s = String(v ?? "").trim().replace(/\s+/g, "");
+  const m = s.match(/^(?:(\d{4})\/)?0*(\d{1,5})$/) ?? s.match(/^0*(\d{1,5})\/(\d{4})$/)?.slice(0, 3).reverse();
+  if (!m) throw new UserError('Anna lausunnon numero muodossa "1516" tai "1998/1516".');
+  const year = m[1] ? asYear(m[1]) : undefined;
+  return { year, num: m[2] };
+}
+
+function kilaKind(x) {
+  return x.status ? "Yleisohje" : isExemption(x.title) ? "Poikkeuslupa" : "Lausunto";
+}
+
+async function haeKilaLausuntoja(args) {
+  const type = String(args.tyyppi ?? "kaikki").trim().toLowerCase();
+  if (!KILA_TYPES.includes(type)) throw new UserError(`tyyppi: ${KILA_TYPES.join(", ")}.`);
+  const query = String(args.hakusana ?? "").trim();
+  const page = args.sivu === undefined ? 1 : Number(args.sivu);
+  if (!Number.isInteger(page) || page < 1 || page > 60) throw new UserError("sivu: 1–60.");
+  let from = args.alkaen_vuosi ? asYear(args.alkaen_vuosi) : undefined;
+  let to = args.paattyen_vuosi ? asYear(args.paattyen_vuosi) : undefined;
+  if (args.vuosi) from = to = asYear(args.vuosi);
+  if (from && to && from > to) throw new UserError("alkaen_vuosi on myöhempi kuin paattyen_vuosi.");
+  const sess = kilaSession();
+  const out = [];
+  const crit = [query && `"${query}"`, from && to && from === to ? `vuosi ${from}` : [from && `alkaen ${from}`, to && `päättyen ${to}`].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+
+  if (args.numero !== undefined && String(args.numero).trim()) {
+    const { year, num } = kilaNumber(args.numero);
+    const hits = await findByNumber(sess, num, year);
+    out.push(`Kirjanpitolautakunta, numero ${year ? `${year}/` : ""}${num}: ${hits.length ? `${hits.length} osuma${hits.length > 1 ? "a" : ""}` : "ei löytynyt"}.`);
+    for (const h of hits) out.push("", `${h.year}/${h.num} · ${fmtDate(h.date) ?? "?"} · ${kilaKind(h)} · ${h.title}`, `  ${h.url}`);
+    if (!hits.length) out.push("Tarkista numero tai hae hakusanalla. Yleisohjeilla ei ole numeroa; ne löytyvät tyypillä yleisohje.");
+    out.push("", "Lue teksti kila_lausunto-työkalulla (numero tai osoite).", `Lähde: ${KILA_BASE}/lausunnot-ja-poikkeusluvat (${KILA_SRC})`);
+    return out.join("\n");
+  }
+
+  const wantStatements = type !== "yleisohje";
+  const wantGuides = type === "yleisohje" || (type === "kaikki" && !!query);
+  if (wantStatements) {
+    const term = query || (type === "poikkeuslupa" ? "poikkeuslupa" : "");
+    const r = await searchStatements(sess, { term, yearStart: from, yearEnd: to, page });
+    let items = r.items;
+    if (type === "poikkeuslupa") items = items.filter((x) => isExemption(x.title));
+    else if (type === "lausunto") items = items.filter((x) => !isExemption(x.title));
+    const label = type === "lausunto" ? "lausunnot" : type === "poikkeuslupa" ? "poikkeusluvat" : "lausunnot ja poikkeusluvat";
+    const span = r.pages ? `sivu ${page}/${r.pages} (${r.pageSize} sivulla)` : `sivu ${page}`;
+    out.push(`Kirjanpitolautakunnan ${label}${crit ? ` (${crit})` : ""}: ${span}.`);
+    if (items.length !== r.items.length) out.push(`Sivulla ${r.items.length} tulosta, joista tyypin ${type} mukaisia ${items.length} (tyyppi päätellään otsikosta).`);
+    if (!items.length) out.push(page > 1 && !r.items.length ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile toista sanaa, sanan perusmuotoa tai väljempää vuosirajausta.");
+    for (const h of items) out.push("", `${h.year ? `${h.year}/${h.num}` : "?"} · ${fmtDate(h.date) ?? "?"} · ${kilaKind(h)} · ${h.title}`, `  ${h.url}`);
+    if (r.hasMore) out.push("", `Lisää tuloksia${r.pages ? "" : " voi olla"}: sivu ${page + 1}.`);
+  }
+  if (wantGuides) {
+    const lists = type === "kaikki" || args.voimassa === true ? ["voimassa"] : args.voimassa === false ? ["aiempi"] : ["voimassa", "aiempi"];
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    let guides = [];
+    for (const l of lists) guides.push(...(await guideList(sess, l)));
+    guides = guides.filter((g) => words.every((w) => g.title.toLowerCase().includes(w)));
+    if (from) guides = guides.filter((g) => g.date && +g.date.slice(0, 4) >= from);
+    if (to) guides = guides.filter((g) => g.date && +g.date.slice(0, 4) <= to);
+    if (out.length) out.push("");
+    const which = lists.length === 2 ? "voimassa olevat ja aiemmat" : lists[0] === "voimassa" ? "voimassa olevat" : "aiemmat (korvatut)";
+    out.push(`Kirjanpitolautakunnan yleisohjeet, ${which}${crit ? ` (${crit}, haku otsikosta)` : ""}: ${guides.length} kpl.`);
+    for (const g of guides) out.push("", `${fmtDate(g.date) ?? "?"} · Yleisohje, ${g.status === "voimassa" ? "voimassa" : "aiempi"} · ${g.title}`, `  ${g.url}`);
+    if (type === "kaikki") out.push("", "Aiemmat (korvatut) yleisohjeet: tyyppi yleisohje.");
+  }
+  out.push(
+    "",
+    "Lue lausunto tai yleisohje kila_lausunto-työkalulla (numero tai osoite; luku, hakusana, liite).",
+    "Lausunto koskee hakijan tapausta; yleisohje on ohje hyvästä kirjanpitotavasta, ei lakia.",
+    `Lähde: ${KILA_BASE}/lausunnot-ja-poikkeusluvat ja ${KILA_BASE}/voimassaolevat (${KILA_SRC})`,
+  );
+  return clip(out.join("\n"));
+}
+
+function kilaChapter(sections, i) {
+  const base = sections[i];
+  const out = [base];
+  for (let j = i + 1; j < sections.length && sections[j].level > base.level; j++) out.push(sections[j]);
+  return out;
+}
+
+function kilaFindSection(sections, luku) {
+  const want = normLuku(luku);
+  let i = sections.findIndex((x) => x.num === want);
+  let note = null;
+  if (i < 0) {
+    const lw = want.toLowerCase();
+    const esc = lw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const rank = (t) => (t === lw ? 0 : t.startsWith(lw) ? 1 : new RegExp(`(^|[\\s(-])${esc}`).test(t) ? 2 : t.includes(lw) ? 3 : 9);
+    const cand = sections
+      .map((x, k) => [x, k, rank(x.title.toLowerCase())])
+      .filter((c) => c[2] < 9)
+      .sort((a, b) => a[2] - b[2] || a[1] - b[1]);
+    if (cand.length) {
+      i = cand[0][1];
+      if (cand.length > 1) note = `Otsikkoon "${want}" osui myös: ${cand.slice(1, 8).map(([x]) => secLabel(x)).join("; ")}.`;
+    }
+  }
+  return { i, note };
+}
+
+function kilaHits(intro, sections, q) {
+  const needle = q.toLowerCase();
+  const hits = [];
+  const scan = (label, text) => {
+    const low = text.toLowerCase();
+    const pos = [];
+    for (let p = low.indexOf(needle); p >= 0 && pos.length < 50; p = low.indexOf(needle, p + needle.length)) pos.push(p);
+    if (!pos.length) return;
+    const ex = pos.slice(0, 2).map((p) => {
+      const a = Math.max(0, p - 160);
+      const b = Math.min(text.length, p + needle.length + 160);
+      return `${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`;
+    });
+    hits.push({ label, n: pos.length, ex });
+  };
+  if (intro) scan("Alku", intro);
+  for (const x of sections) scan(secLabel(x), `${x.title}\n${x.text}`);
+  return hits;
+}
+
+function kilaHitsOut(hits, q) {
+  const out = [`Hakusana "${q}": ${hits.reduce((s, h) => s + h.n, 0)} osumaa ${hits.length} luvussa.`];
+  for (const h of hits.slice(0, 30)) {
+    out.push("", `${h.label} (${h.n})`);
+    for (const e of h.ex) out.push(`  ${e}`);
+  }
+  if (hits.length > 30) out.push("", `… ja ${hits.length - 30} muuta lukua.`);
+  if (!hits.length) out.push("Ei osumia. Haku on kirjaimellinen: kokeile sanan vartaloa.");
+  return out;
+}
+
+const kilaToc = (sections) => sections.map((x) => `${"  ".repeat(Math.max(0, x.level - 1))}${secLabel(x)}${x.page ? ` (s. ${x.page})` : ""}`);
+
+async function kilaLausunto(args) {
+  const sess = kilaSession();
+  let url = String(args.osoite ?? "").trim();
+  if (!url && String(args.numero ?? "").trim()) {
+    const { year, num } = kilaNumber(args.numero);
+    const hits = await findByNumber(sess, num, year);
+    if (!hits.length) throw new UserError(`Lausuntoa numerolla ${year ? `${year}/` : ""}${num} ei löytynyt kirjanpitolautakunta.fi:stä. Tarkista numero tai hae hae_kila_lausuntoja-työkalulla.`);
+    if (hits.length > 1) return [`Numerolla ${num} löytyi useita:`, ...hits.map((h) => `- ${h.year}/${h.num} ${h.title}: ${h.url}`), "", "Anna numero vuoden kanssa (esim. \"1998/1516\") tai osoite."].join("\n");
+    url = hits[0].url;
+  }
+  if (!url) throw new UserError("Anna numero (esim. \"1998/1516\") tai osoite hae_kila_lausuntoja-työkalun tuloksesta.");
+  if (!/^https:\/\/(www\.)?kirjanpitolautakunta\.fi\/-\/[^/?#]+/i.test(url) || !kilaUrlAllowed(url.replace(/[?#].*$/, ""))) {
+    throw new UserError("Osoitteen pitää olla kirjanpitolautakunnan asiakirjasivu (https://kirjanpitolautakunta.fi/-/...). Sivuston robots.txt:n kieltämiä polkuja (esim. /-/q/, /haku/, /web/) ei haeta.");
+  }
+  const d = await docPage(sess, url);
+  if (!d) throw new UserError("Asiakirjaa ei löytynyt osoitteesta. Hae se uudelleen hae_kila_lausuntoja-työkalulla.");
+
+  const kind = d.kind;
+  const head = [d.title];
+  if (kind === "yleisohje") {
+    const [v, a] = await Promise.all([guideList(sess, "voimassa", { cacheOnly: true }), guideList(sess, "aiempi", { cacheOnly: true })]);
+    const status = v?.some((g) => g.url === d.url) ? "voimassa" : a?.some((g) => g.url === d.url) ? "aiempi (korvattu)" : null;
+    head.push(`Kirjanpitolautakunnan yleisohje, annettu ${fmtDate(d.date) ?? "?"}${status ? `, ${status}` : ""}`);
+  } else {
+    head.push(`Kirjanpitolautakunnan ${kind} ${d.number ? `${d.date?.slice(0, 4) ?? "?"}/${d.number}` : ""}, annettu ${fmtDate(d.date) ?? "?"}`.replace(/\s+,/, ","));
+  }
+  if (d.keywords) head.push(`Asiasanat: ${d.keywords}`);
+  const src = `Lähde: ${d.url} (${KILA_SRC})`;
+  const note = KILA_NOTE[kind] ?? KILA_NOTE.lausunto;
+
+  // Yleisohje: teksti PDF:stä, liitteet vain pyydettäessä.
+  const { main, annexes } = splitGuidePdfs(d.pdfs);
+  const pdfBased = kind === "yleisohje" && main && d.sections.length === 0;
+  if (args.liite !== undefined && String(args.liite).trim()) {
+    if (!annexes.length) throw new UserError("Asiakirjalla ei ole liitteitä.");
+    const w = String(args.liite).trim().toLowerCase().replace(/^liite\s*/, "");
+    const esc = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`liite\\s*0*${esc}(?![0-9a-z])`, "i");
+    let ax = annexes.find((x) => re.test(x.name));
+    if (!ax && /^\d+$/.test(w) && annexes[+w - 1] && !annexes.some((x) => /liite/i.test(x.name))) ax = annexes[+w - 1];
+    if (!ax) throw new UserError(`Liitettä "${args.liite}" ei löytynyt. Liitteet:\n${annexes.map((x) => `- ${x.name}`).join("\n")}`);
+    const pages = await attachmentText(sess, ax.url);
+    if (!pages?.length) throw new UserError(`Liitteen tekstiä ei saatu PDF:stä. Avaa liite: ${ax.url}`);
+    let text = pages.map((p, i) => (pages.length > 1 ? `--- sivu ${i + 1} ---\n${p}` : p)).join("\n\n");
+    if (text.length > KILA_TEXT_MAX) text = `${text.slice(0, KILA_TEXT_MAX)}\n… (katkaistu; koko liite lähteessä)`;
+    return clip([...head, `Liite: ${ax.name}`, "", text, "", "Teksti on purettu PDF:stä automaattisesti; tarkista taulukoiden luvut PDF:stä.", `Lähde: ${ax.url} (${KILA_SRC})`, note].join("\n"));
+  }
+
+  let intro = d.intro;
+  let sections = d.sections;
+  let pages = null;
+  if (pdfBased) {
+    const g = await guideText(sess, main.url);
+    if (!g) throw new UserError(`Yleisohjeen PDF:ää ei saatu. Avaa se: ${main.url}`);
+    sections = g.sections;
+    pages = g.pages;
+    // Sivun teksti ilman otsikon toistoa ja PDF-tiedostojen nimiä (esim. "Tämä yleisohje korvaa ...").
+    intro = d.intro
+      .split("\n")
+      .filter((l) => l !== d.title && !/\.pdf$/i.test(l.replace(/^- /, "")))
+      .join("\n");
+    head.push(`Teksti: ${main.name} (${g.pageCount} sivua, purettu PDF:stä automaattisesti): ${main.url}`);
+  }
+  const annexList = annexes.length ? [`Liitteet (${annexes.length}, haetaan parametrilla liite, esim. "1"):`, ...annexes.map((x) => `- ${x.name}`)] : [];
+
+  if (args.luku !== undefined && String(args.luku).trim()) {
+    if (!sections.length) throw new UserError("Tekstissä ei tunnistettu numeroituja lukuja. Hae parametrilla hakusana tai lue koko teksti ilman parametreja.");
+    const { i, note: n2 } = kilaFindSection(sections, args.luku);
+    if (i < 0) return clip([...head, "", `Lukua "${args.luku}" ei löytynyt. Sisällys:`, ...kilaToc(sections), "", src].join("\n"));
+    const o = [...head, ""];
+    if (n2) o.push(n2, "");
+    for (const x of kilaChapter(sections, i)) o.push(`${secLabel(x)}${x.page ? ` [PDF:n s. ${x.page}]` : ""}`, x.text || "(ei tekstiä ennen alalukuja)", "");
+    o.push(src, note);
+    return clip(o.join("\n"));
+  }
+  if (args.hakusana !== undefined && String(args.hakusana).trim()) {
+    const q = String(args.hakusana).trim();
+    const o = [...head, ""];
+    if (sections.length) o.push(...kilaHitsOut(kilaHits(intro, sections, q), q), "", "Lue luku sanatarkasti parametrilla luku.");
+    else if (pages) {
+      const hits = textHits(pages, q);
+      o.push(hits.length ? `Osumat hakusanalle "${q}" (${hits.length}${hits.length >= 30 ? "+" : ""}):` : `Hakusanaa "${q}" ei löytynyt. Kokeile sanan vartaloa.`);
+      for (const h of hits) o.push("", h);
+    } else o.push(...kilaHitsOut(kilaHits(intro, [], q), q));
+    o.push("", src, note);
+    return clip(o.join("\n"));
+  }
+
+  const o = [...head, ""];
+  if (intro) o.push(intro, "");
+  const total = sections.reduce((s, x) => s + x.text.length, 0);
+  if (pdfBased) {
+    if (sections.length) {
+      if (total <= 15_000) for (const x of sections) o.push(secLabel(x), x.text, "");
+      else o.push(`Sisällysluettelo (noin ${Math.round(total / 1000)} 000 merkkiä; lue luku parametrilla luku, esim. "${sections.find((x) => x.text)?.num ?? "1"}", tai etsi parametrilla hakusana):`, ...kilaToc(sections), "");
+    } else if (pages) {
+      let text = pages.map((p, i) => `--- sivu ${i + 1} ---\n${p}`).join("\n\n");
+      if (text.length > KILA_TEXT_MAX) text = `${text.slice(0, KILA_TEXT_MAX)}\n… (katkaistu; etsi parametrilla hakusana)`;
+      o.push(text, "");
+    }
+  } else if (total + intro.length <= KILA_TEXT_MAX) {
+    for (const x of sections) o.push(secLabel(x), x.text, "");
+  } else {
+    o.push(`Sisällys (noin ${Math.round(total / 1000)} 000 merkkiä; lue luku parametrilla luku tai etsi parametrilla hakusana):`, ...kilaToc(sections), "");
+  }
+  if (annexList.length) o.push(...annexList, "");
+  o.push(src, note);
+  return clip(o.join("\n"));
+}
+
 // ---------- Viranomaisratkaisut ----------
 
 function asSource(v) {
@@ -3130,6 +3425,8 @@ const HANDLERS = {
   hae_vero_ohjeita: haeVeroOhjeita,
   hae_viranomaisohjeita: haeViranomaisohjeita,
   viranomaisohje,
+  hae_kila_lausuntoja: haeKilaLausuntoja,
+  kila_lausunto: kilaLausunto,
 };
 
 export async function callTool(name, args = {}) {
@@ -3144,6 +3441,8 @@ export async function callTool(name, args = {}) {
         ? e.message
         : e instanceof EduskuntaError
           ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof KilaError
+          ? `Kirjanpitolautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof OhjeUserError
           ? e.message
           : e instanceof OhjeError
