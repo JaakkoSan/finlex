@@ -16,7 +16,7 @@
 //   ellei toisin mainita; robots.txt Crawl-delay 1, joten STT Infon haut tehdään 1 s välein) ja
 //   7 aluetta omasta RSS-syötteestä. robots.txt sallii syötteet ja tiedotesivut kaikilla
 //   (ekhva.fi ja siunsote.fi: ei robots.txt-tiedostoa). Pohjois-Savo (robots.txt kieltää) ja
-//   Lappi (ei syötettä) puuttuvat.
+//   Lappi (ei syötettä) puuttuvat, samoin Keski-Pohjanmaa (soite.fi kieltää tekoälyrobotit).
 // Fimean ja Tukesin verkkosivut torjuvat automaattiset haut (403), joten niiden tiedotteista
 // näytetään vain syötteen tiedot. Tiedotteen teksti haetaan vain vero.fi:stä ja sttinfo.fi:stä
 // (robots.txt sallii; STT Info pyytää 1 s viivettä, ja haut välimuistitetaan).
@@ -63,13 +63,14 @@ export const HVA_FEEDS = {
   keski_suomi: { name: "Keski-Suomen hyvinvointialue", short: "HVA Keski-Suomi", url: STT(69821063) },
   etela_pohjanmaa: { name: "Etelä-Pohjanmaan hyvinvointialue", short: "HVA Etelä-Pohjanmaa", url: "https://www.hyvaep.fi/feed/?post_type=notices", page: { start: ["<div class=wysiwyg-content>"], end: ['<div class="container article-tags">', '<section class="notice-highlights', "</main>"] } },
   pohjanmaa: { name: "Pohjanmaan hyvinvointialue", short: "HVA Pohjanmaa", url: STT(69820565) },
-  keski_pohjanmaa: { name: "Keski-Pohjanmaan hyvinvointialue (Soite)", short: "HVA Keski-Pohjanmaa", url: "https://soite.fi/category/tiedote/feed/", page: { start: ['<div class="main-content-area readspeaker-read'], end: ['<section class="rekai', "Sisältö liittyy seuraaviin", "</article>"] } },
+  // Keski-Pohjanmaa (Soite) jätetty pois 12.11.2026, kunnes käyttäjä päättää: soite.fi:n robots.txt kieltää nimetyt tekoälyrobotit (ClaudeBot, GPTBot).
+  // keski_pohjanmaa: { name: "Keski-Pohjanmaan hyvinvointialue (Soite)", short: "HVA Keski-Pohjanmaa", url: "https://soite.fi/category/tiedote/feed/", page: { start: ['<div class="main-content-area readspeaker-read'], end: ['<section class="rekai', "Sisältö liittyy seuraaviin", "</article>"] } },
   pohjois_pohjanmaa: { name: "Pohjois-Pohjanmaan hyvinvointialue (Pohde)", short: "HVA Pohjois-Pohjanmaa", url: STT(69817636) },
   kainuu: { name: "Kainuun hyvinvointialue", short: "HVA Kainuu", url: "https://hyvinvointialue.kainuu.fi/ajankohtaista/rss.xml", page: { start: ['<div class="content-body">'], end: ["</article>"] } },
 };
 for (const [k, f] of Object.entries(HVA_FEEDS)) FEEDS[k] = { ...f, text: true, hva: true };
 /** Alueet, joilta ei ole syötettä. */
-export const HVA_MISSING = "Pohjois-Savo (sivuston robots.txt kieltää automaattiset haut) ja Lappi (ei tiedotesyötettä)";
+export const HVA_MISSING = "Pohjois-Savo (sivuston robots.txt kieltää automaattiset haut), Keski-Pohjanmaa (sivuston robots.txt kieltää tekoälyrobotit) ja Lappi (ei tiedotesyötettä)";
 /** Hyvinvointialueen oma sivusto: isäntänimi -> syötteen avain. */
 const HVA_HOSTS = new Map(Object.entries(HVA_FEEDS).filter(([, f]) => f.page).map(([k, f]) => [new URL(f.url).hostname, k]));
 const hvaKeyOf = (u) => HVA_HOSTS.get(u.hostname) ?? HVA_HOSTS.get(u.hostname.startsWith("www.") ? u.hostname.slice(4) : `www.${u.hostname}`) ?? null;

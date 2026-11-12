@@ -360,7 +360,7 @@ export const TOOLS = [
   {
     name: "viranomaistiedotteet",
     description:
-      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Pohjois-Savoa eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
+      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Pohjois-Savoa, Keski-Pohjanmaata eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1884,7 +1884,7 @@ function feedKeys(arg) {
     const k = FEED_ALIASES[p] ?? p;
     if (k === "kaikki") keys.push(...national, ...hva);
     else if (k === "hyvinvointialueet") keys.push(...hva);
-    else if (/^(pohjois_savo|lappi|lapin_hyvinvointialue|pohjois_savon_hyvinvointialue)$/.test(k)) throw new UserError(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}. Katso tiedotteet alueen omilta sivuilta.`);
+    else if (/^(pohjois_savo|lappi|lapin_hyvinvointialue|pohjois_savon_hyvinvointialue|keski_pohjanmaa|soite|keski_pohjanmaan_hyvinvointialue)$/.test(k)) throw new UserError(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}. Katso tiedotteet alueen omilta sivuilta.`);
     else if (FEEDS[k]) keys.push(k);
     else throw new UserError(`viranomainen: ${national.join(", ")}, hyvinvointialueet, ${hva.join(", ")} tai kaikki.`);
   }
