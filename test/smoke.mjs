@@ -30,7 +30,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 24, "tools/list (24 työkalua)");
+check(list.result?.tools?.length === 26, "tools/list (26 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -69,6 +69,22 @@ const cases = [
   ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", luku: "3.9.2" }, (t) => t.includes("3.9.2 Poiston määrä ja edellytykset") && !t.includes("3.9.3 Vastikkeellisesti")],
   ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", luku: "3.9" }, (t) => t.includes("3.9.1 Yleistä") && t.includes("3.9.6 Lisäpoisto") && !t.includes("3.10 Maatilan")],
   ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", hakusana: "remont" }, (t) => t.includes("3.7.3 Korjausmenot") && t.includes("osumaa")],
+  ["viranomaistiedotteet", { viranomainen: "tietosuoja,kyber,kkv" }, (t) => t.includes("Tietosuoja ") && t.includes("Kyber ") && t.includes("KKV ") && !t.includes("HUOM")],
+  ["hae_viranomaisohjeita", { hakusana: "eväste", viranomainen: "traficom" }, (t) => t.includes("kyberturvallisuuskeskus.fi/fi/viestintaverkkojen-ja-palveluiden-saantely/evasteet")],
+  ["hae_viranomaisohjeita", { hakusana: "oikeutettu etu", viranomainen: "tietosuoja" }, (t) => t.includes("https://tietosuoja.fi/rekisterinpitajan-oikeutettu-etu")],
+  ["hae_viranomaisohjeita", { hakusana: "vaikuttajamarkkinointi", viranomainen: "kkv" }, (t) => t.includes("kuluttaja-asiamiehen-linjaukset/vaikuttajamarkkinointi-sosiaalisessa-mediassa/") && t.includes("linjaus")],
+  ["hae_viranomaisohjeita", { hakusana: "KKV/2071/14.08.01.02/2014", viranomainen: "kkv" }, (t) => t.includes("/paatokset/kuluttaja-asiat/kkv-2071-14-08-01-02-2014/") && t.includes("Päätös")],
+  ["hae_viranomaisohjeita", { hakusana: "tilinpäätös", viranomainen: "prh" }, (t) => t.includes("https://www.prh.fi/fi/yrityksetjayhteisot/tilinpaatokset.html")],
+  ["viranomaisohje", { osoite: "https://www.kkv.fi/kuluttaja-asiat/tietoa-ja-ohjeita-yrityksille/kuluttaja-asiamiehen-linjaukset/vaikuttajamarkkinointi-sosiaalisessa-mediassa/", luku: "4.1" }, (t) => t.includes("4.1 Pääsääntö") && t.includes("kaupallinen yhteistyö") && !t.includes("4.2 Alustojen") && t.includes("ei lakia")],
+  ["viranomaisohje", { osoite: "https://www.kkv.fi/paatokset/kuluttaja-asiat/kuluttaja-asiamiehen-seuraamusmaksuesitykset/perustajaosakkaan-velvollisuus-suorituskyvyttomyysvakuuden-asettamiseen/" }, (t) => t.includes("Diaarinumero: KKV/1424/14.08.01.02/2025") && t.includes("Päivämäärä: 30.10.2026") && t.includes("Lähde: https://www.kkv.fi/")],
+  ["viranomaisohje", { osoite: "https://www.kyberturvallisuuskeskus.fi/fi/viestintaverkkojen-ja-palveluiden-saantely/evasteet" }, (t) => t.includes("Evästeohjeistus palveluntarjoajille") && t.includes("Evästeisiin liittyvät valvontapäätökset") && t.includes(".pdf")],
+  ["viranomaisohje", { osoite: "https://www.kyberturvallisuuskeskus.fi/sites/default/files/media/file/Ev%C3%A4steohjeistus_palveluntarjoajille.pdf", luku: "2" }, (t) => t.includes("2 Soveltamisala") && t.includes("PDF:n sivut") && !t.includes("3 Evästeiden käytön edellytyksistä")],
+  ["viranomaisohje", { osoite: "https://tietosuoja.fi/rekisterinpitajan-oikeutettu-etu", luku: "Tasapainotesti" }, (t) => t.includes("Tasapainotesti") && t.includes("Tietosuojavaltuutetun toimisto")],
+  ["viranomaisohje", { osoite: "https://www.prh.fi/fi/yrityksetjayhteisot/tilinpaatokset/osakeyhtio_ja_osuuskunta_tilinpaatos_kaupparekisteriin.html", hakusana: "8 kuukauden" }, (t) => t.includes("Milloin ilmoitat?") && t.includes("osumaa")],
+  ["viranomaisohje", { osoite: "https://www.traficom.fi/fi/" }, (t) => t.includes("Ohjeita luetaan vain sivustoilta")],
+  ["viranomaisohje", { osoite: "https://tietosuoja.fi/haku/?q=evaste" }, (t) => t.includes("robots.txt kieltää")],
+  ["viranomaisohje", { osoite: "https://fimea.fi/etusivu" }, (t) => t.includes("torjuvat automaattiset haut")],
+  ["viranomaisohje", { osoite: "https://tukes.fi/etusivu" }, (t) => t.includes("torjuvat automaattiset haut")],
   ["kirjallinen_kysymys", { kysymys: "KK 365/2026 vp" }, (t) => t.includes("Kysyjä: Mia Laiho") && t.includes("Kysymys:") && t.includes("Vastaus KKV 365/2026 vp")],
   ["hae_eduskunnan_asiakirjoja", { tyyppi: "kysymys", hakusana: "kauneudenhoito" }, (t) => t.includes("KK 365/2026 vp") && t.includes("Kysyjä:")],
   ["eduskunnan_asiakirja", { asiakirja: "PeVL 38/2022 vp" }, (t) => t.includes("VALIOKUNNAN PÄÄTÖSESITYS") && t.includes("tavallisen lain säätämisjärjestyksessä")],

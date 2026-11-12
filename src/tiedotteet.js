@@ -7,13 +7,17 @@
 //   tietoa-verohallinnosta/sahkoinen-asiointi/verofi-search-api-documentation.pdf). Vero.fi:n
 //   sisältökuvauksen mukaan ohjeita saa hakea koneellisesti myös rajapinnan kautta ja esittää
 //   ulkoisissa palveluissa; robots.txt ei rajoita (tarkistettu 11.11.2026).
+// - Tietosuojavaltuutettu: https://tietosuoja.fi/etusivu/-/asset_publisher/GcYqYm2ssJIz/rss (etusivun RSS-linkki)
+// - Kyberturvallisuuskeskus (Traficom): https://www.kyberturvallisuuskeskus.fi/feed/rss/fi (kaikki ajankohtaiset)
+// - KKV: https://www.kkv.fi/feed/?post_type=current-cpt&post_parent=1392 (ajankohtaista-sivun RSS-linkki)
+//   (lisätty 12.11.2026; tekstit luetaan ohjeet.js:n kautta, joka noudattaa robots.txt:tä)
 // Fimean ja Tukesin verkkosivut torjuvat automaattiset haut (403), joten niiden tiedotteista
 // näytetään vain syötteen tiedot. Tiedotteen teksti haetaan vain vero.fi:stä ja sttinfo.fi:stä
 // (robots.txt sallii; STT Info pyytää 1 s viivettä, ja haut välimuistitetaan).
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 
-const USER_AGENT = "finlex-mcp/1.10 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = "finlex-mcp/1.12 (Claude-liitin; Cloudflare Worker)";
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export class TiedoteError extends FinlexError {}
@@ -24,6 +28,9 @@ export const FEEDS = {
   lvv: { name: "Lupa- ja valvontavirasto (tiedotteet STT Infossa)", short: "LVV", url: "https://www.sttinfo.fi/rss/releases/latest?publisherId=69821631", text: true },
   vero: { name: "Verohallinto, uutiset", short: "Vero", url: "https://www.vero.fi/api/rss/news/fi", text: true },
   vero_ohjeet: { name: "Verohallinto, syventävät vero-ohjeet", short: "Vero-ohje", url: "https://www.vero.fi/api/rss/preciseinformation/fi", text: true },
+  tietosuoja: { name: "Tietosuojavaltuutetun toimisto, ajankohtaista", short: "Tietosuoja", url: "https://tietosuoja.fi/etusivu/-/asset_publisher/GcYqYm2ssJIz/rss", text: true },
+  kyber: { name: "Traficomin Kyberturvallisuuskeskus, ajankohtaista", short: "Kyber", url: "https://www.kyberturvallisuuskeskus.fi/feed/rss/fi", text: true },
+  kkv: { name: "Kilpailu- ja kuluttajavirasto (KKV), ajankohtaista", short: "KKV", url: "https://www.kkv.fi/feed/?post_type=current-cpt&post_parent=1392", text: true },
 };
 
 const TEXT_HOSTS = new Set(["www.vero.fi", "vero.fi", "www.sttinfo.fi", "sttinfo.fi"]);
@@ -49,7 +56,7 @@ async function get(url, ttl) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let res;
     try {
-      res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/rss+xml, application/xml, text/xml, text/html;q=0.8" } });
+      res = await fetch(url, { headers: { "User-Agent": USER_AGENT, "Accept-Language": "fi", Accept: "application/rss+xml, application/xml, text/xml, text/html;q=0.8" } });
     } catch (e) {
       last = new TiedoteError(`yhteys epäonnistui: ${e?.message ?? e}`, 0);
       await sleep(500 * 2 ** attempt);
@@ -105,13 +112,15 @@ export async function feedItems(key) {
   for (const m of xml.matchAll(/<item\b[\s\S]*?<\/item>/g)) {
     const it = m[0];
     const title = tag(it, "title");
-    const link = tag(it, "link");
+    // Seurantaparametrit (mtm_) pois linkistä.
+    const link = tag(it, "link")?.replace(/[?&]mtm_[^#]*$/, "") ?? null;
     if (!title || !link) continue;
     // STT Infon syötteessä sama tiedote voi toistua; yhdistetään otsikon ja linkin mukaan.
     const k = `${title}|${link.replace(/\?.*$/, "")}`;
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ source: key, title, link, date: isoDate(it), summary: tag(it, "description") });
+    const summary = tag(it, "description")?.replace(/<[^>]+>/g, " ").replace(/\s*Source\s*$/, "").replace(/\s+/g, " ").trim() || null;
+    out.push({ source: key, title, link, date: isoDate(it), summary });
   }
   return out;
 }
@@ -261,7 +270,7 @@ async function getHead(url) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let res;
     try {
-      res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html" } });
+      res = await fetch(url, { headers: { "User-Agent": USER_AGENT, "Accept-Language": "fi", Accept: "text/html" } });
     } catch (e) {
       last = new TiedoteError(`yhteys epäonnistui: ${e?.message ?? e}`, 0);
       await sleep(500 * 2 ** attempt);

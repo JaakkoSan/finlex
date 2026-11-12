@@ -33,6 +33,7 @@ import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edk
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
 import { FEEDS, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
+import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -358,11 +359,11 @@ export const TOOLS = [
   {
     name: "viranomaistiedotteet",
     description:
-      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu) ja Verohallinto (uutiset ja syventävät vero-ohjeet). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
+      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV. Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
     inputSchema: {
       type: "object",
       properties: {
-        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet tai kaikki (oletus). Useita pilkulla erotettuna." },
+        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet, tietosuoja, kyber, kkv tai kaikki (oletus). Useita pilkulla erotettuna." },
         hakusana: { type: "string", description: "Sana otsikosta tai tiivistelmästä, esim. \"kosmet\" tai \"arvonlisävero\". Valinnainen." },
         alkaen: { type: "string", description: "Tiedotteet alkaen (vvvv-kk-pp). Valinnainen." },
         enintaan: { type: "integer", description: "Montako näytetään (oletus 20, enintään 60)." },
@@ -372,11 +373,11 @@ export const TOOLS = [
   {
     name: "viranomaistiedote",
     description:
-      "Palauttaa Verohallinnon tai Lupa- ja valvontaviraston tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen.",
+      "Palauttaa Verohallinnon, Lupa- ja valvontaviraston, tietosuojavaltuutetun, Kyberturvallisuuskeskuksen tai KKV:n tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen.",
     inputSchema: {
       type: "object",
       properties: {
-        osoite: { type: "string", description: "Osoite (vero.fi tai sttinfo.fi), esim. hae_vero_ohjeita- tai viranomaistiedotteet-työkalun tuloksesta." },
+        osoite: { type: "string", description: "Osoite (vero.fi, sttinfo.fi, tietosuoja.fi, kyberturvallisuuskeskus.fi tai kkv.fi), esim. hae_vero_ohjeita- tai viranomaistiedotteet-työkalun tuloksesta." },
         luku: { type: "string", description: "Vero-ohjeen luku numerolla (\"3.7.3\", \"3.9\") tai otsikon sanalla (\"Poistot\"). Luku palautetaan alalukuineen. Valinnainen." },
         hakusana: { type: "string", description: "Sana tai sanonta, jota etsitään vero-ohjeen tekstistä; palauttaa luvut, joissa se esiintyy, otteineen. Käytä sanan vartaloa (esim. \"remont\"). Valinnainen." },
       },
@@ -398,6 +399,35 @@ export const TOOLS = [
         kieli: { type: "string", enum: ["fi", "sv"], description: "fi (oletus) tai sv." },
         sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla 10 tulosta." },
       },
+    },
+  },
+  {
+    name: "hae_viranomaisohjeita",
+    description:
+      "Hakee viranomaisten ohjeita ja linjauksia niiden verkkosivuilta: Traficom (Kyberturvallisuuskeskus: evästeet, sähköisen viestinnän tietoturva ja luottamuksellisuus, sähköinen tunnistaminen ja luottamuspalvelut, kyberturvallisuusohjeet ja -oppaat), tietosuojavaltuutettu (tietosuoja.fi:n ohjeet, esim. käsittelyperusteet, rekisteröidyn oikeudet, kameravalvonta, työelämä), KKV (kuluttaja-asiamiehen linjaukset ja ohjeistukset, kuluttaja-asioiden ohjeet, päätökset) ja PRH (kaupparekisteri, yhdistykset, säätiöt, tavaramerkit, patentit). Haku kohdistuu otsikkoon ja osoitteeseen (KKV:ssa sivujen otsikoihin WordPressin hakurajapinnalla ja päätöksissä osoitteeseen; KKV:n päätöksen voi hakea myös diaarinumerolla). Palauttaa otsikon ja osoitteen; lue ohje viranomaisohje-työkalulla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana tai sanan alku otsikosta, esim. \"eväste\", \"vaikuttajamarkkinointi\", \"oikeutettu etu\", \"tilinpäätös\", tai KKV:n diaarinumero (KKV/1613/14.00.10/2026). Tyhjä = luettelo." },
+        viranomainen: { type: "string", description: "traficom, tietosuoja, kkv, prh tai kaikki (oletus). Useita pilkulla erotettuna." },
+        tyyppi: { type: "string", enum: ["ohje", "linjaus", "paatos", "kaikki"], description: "ohje (ohjeet ja linjaukset), linjaus (KKV:n kuluttaja-asiamiehen linjaukset ja ohjeistukset), paatos (KKV:n päätökset; tietosuoja.fi:n ratkaisusivut) tai kaikki (oletus)." },
+        enintaan: { type: "integer", description: "Montako tulosta näytetään (oletus 20, enintään 60)." },
+      },
+    },
+  },
+  {
+    name: "viranomaisohje",
+    description:
+      "Palauttaa viranomaisen ohjeen tai päätöksen tekstin osoitteella (kyberturvallisuuskeskus.fi, tietosuoja.fi, kkv.fi tai prh.fi; myös näiden PDF-tiedostot). Ilman lisäparametreja: otsikko, tiedot (esim. KKV:n päätöksen päivämäärä ja diaarinumero), sisällysluettelo ja liitteet (PDF); lyhyestä ohjeesta koko teksti. Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"4.1\" tai otsikon sana), hakusanalla osumat luvuittain (PDF:ssä sivuittain) ja PDF:stä sivu-parametrilla sivualue.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        osoite: { type: "string", description: "Ohjeen tai PDF:n osoite, esim. hae_viranomaisohjeita-työkalun tuloksesta tai ohjeen liiteluettelosta." },
+        luku: { type: "string", description: "Luku numerolla (\"4.1\", \"2\") tai otsikon sanalla (\"Pääsääntö\"). Palautetaan alalukuineen. Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanan vartalo, jota etsitään tekstistä (esim. \"suostumu\"). Valinnainen." },
+        sivu: { type: "string", description: "PDF:n sivu tai sivualue, esim. \"3\" tai \"3-5\". Valinnainen." },
+      },
+      required: ["osoite"],
     },
   },
   {
@@ -484,6 +514,8 @@ const TITLES = {
   viranomaistiedotteet: "Viranomaisten tiedotteet",
   viranomaistiedote: "Viranomaisen tiedote",
   hae_vero_ohjeita: "Hae vero-ohjeita",
+  hae_viranomaisohjeita: "Hae viranomaisten ohjeita",
+  viranomaisohje: "Viranomaisen ohje",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -1827,8 +1859,8 @@ async function viranomaistiedotteet(args) {
   if (!all.length) out.push("Ei osumia. Syötteissä on vain uusimmat tiedotteet; vanhempia etsi viraston verkkosivuilta.");
   out.push(
     "",
-    "Veron ja LVV:n tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite). Fimean ja Tukesin tiedotteet luetaan viraston sivulta. Kaikki syventävät vero-ohjeet löytyvät hae_vero_ohjeita-työkalulla.",
-    "Lähteet: Fimea, Tukes ja Verohallinto (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).",
+    "Tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite); Fimean ja Tukesin tiedotteet luetaan viraston sivulta. Kaikki syventävät vero-ohjeet löytyvät hae_vero_ohjeita-työkalulla ja muiden viranomaisten ohjeet hae_viranomaisohjeita-työkalulla.",
+    "Lähteet: Fimea, Tukes, Verohallinto, tietosuojavaltuutettu, Kyberturvallisuuskeskus ja KKV (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).",
   );
   return clip(out.join("\n"));
 }
@@ -1843,6 +1875,7 @@ async function viranomaistiedote(args) {
       return "";
     }
   })();
+  if (authorityOf(url)) return viranomaisohje(args);
   if (/(^|\.)fimea\.fi$|(^|\.)tukes\.fi$/.test(host)) {
     return `Fimean ja Tukesin sivut eivät salli automaattista hakua, joten tiedotteen teksti on luettava viraston sivulta: ${url}`;
   }
@@ -2004,6 +2037,266 @@ async function haeVeroOhjeita(args) {
   if (r.hasMore) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
   out.push("", "Lue ohje, sen luku tai hakusanan osumat viranomaistiedote-työkalulla (osoite, luku, hakusana).", "Lähde: Verohallinto, vero.fi-haku (https://www.vero.fi/syventavat-vero-ohjeet/).");
   return out.join("\n");
+}
+
+// ---------- Viranomaisten ohjeet (Traficom, tietosuojavaltuutettu, KKV, PRH) ----------
+
+const OHJE_NOTE = "Ohje on viranomaisen tulkinta, ei lakia. Tarkista lainkohdat hae_pykala-työkalulla ja ohjeen ajantasaisuus viranomaisen sivulta.";
+const OHJE_TYPE_NAMES = { ohje: "ohje", linjaus: "linjaus", paatos: "päätös" };
+
+async function haeViranomaisohjeita(args) {
+  const want = String(args.viranomainen ?? "kaikki").trim().toLowerCase();
+  const keys = want === "kaikki" ? Object.keys(OHJE_AUTH) : want.split(/[,\s]+/).filter(Boolean);
+  for (const k of keys) if (!OHJE_AUTH[k]) throw new UserError(`viranomainen: ${Object.keys(OHJE_AUTH).join(", ")} tai kaikki.`);
+  const type = String(args.tyyppi ?? "kaikki").trim().toLowerCase();
+  if (!["ohje", "linjaus", "paatos", "kaikki"].includes(type)) throw new UserError("tyyppi: ohje, linjaus, paatos tai kaikki.");
+  const query = String(args.hakusana ?? "").trim();
+  const max = Math.min(60, Math.max(1, Number.parseInt(args.enintaan, 10) || 20));
+  const { hits, errors } = await searchOhjeet({ query, authorities: keys, type });
+  const names = keys.map((k) => OHJE_AUTH[k].short).join(", ");
+  const out = [`Viranomaisten ohjeet (${names}${query ? `, "${query}"` : ""}${type !== "kaikki" ? `, tyyppi ${type}` : ""}): ${hits.length} osumaa${hits.length > max ? `, näytetään ${max}` : ""}.`];
+  for (const e of errors) out.push(`HUOM: ${e}`);
+  for (const h of hits.slice(0, max)) {
+    out.push("", `${OHJE_AUTH[h.authority].short} · ${h.authority === "kkv" ? KKV_TYPES[h.type] ?? h.type : OHJE_TYPE_NAMES[h.type] ?? h.type} · ${h.title}${h.slug ? " (otsikko osoitteesta)" : ""}`, `  ${h.url}`);
+  }
+  if (!hits.length) out.push("", "Ei osumia. Haku kohdistuu otsikkoon ja osoitteeseen, ei tekstiin: kokeile lyhyempää sanaa tai sanan alkua (esim. \"eväste\", \"markkinoin\").");
+  const tips = [];
+  if (keys.includes("tietosuoja")) tips.push("Tietosuojavaltuutetun ratkaisut: hae_ratkaisuja (lahde tietosuojavaltuutettu).");
+  if (keys.includes("traficom")) tips.push("Traficomin määräykset (esim. M72B tunnistus- ja luottamuspalveluista): hae_viranomaismaarayksia.");
+  out.push(
+    "",
+    "Lue ohje, sen luku tai hakusanan osumat viranomaisohje-työkalulla (osoite, luku, hakusana).",
+    ...tips,
+    `Lähteet: ${keys.map((k) => `${OHJE_AUTH[k].name} (${OHJE_AUTH[k].base.replace("https://", "")})`).join("; ")}.`,
+  );
+  return clip(out.join("\n"));
+}
+
+function ohjeSource(url, auth) {
+  return `Lähde: ${url} (${OHJE_AUTH[auth]?.name ?? "viranomainen"}). ${OHJE_NOTE}`;
+}
+
+function ohjeHead(d) {
+  const out = [`${d.title ?? "Ohje"} (${OHJE_AUTH[d.authority].name})`];
+  for (const [k, v] of d.meta ?? []) out.push(`${k}: ${v}`);
+  return out;
+}
+
+function excerpts(text, q, n = 2) {
+  const low = text.toLowerCase();
+  const pos = [];
+  for (let p = low.indexOf(q); p >= 0 && pos.length < 50; p = low.indexOf(q, p + q.length)) pos.push(p);
+  return {
+    n: pos.length,
+    ex: pos.slice(0, n).map((p) => {
+      const a = Math.max(0, p - 160);
+      const b = Math.min(text.length, p + q.length + 160);
+      return `${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`;
+    }),
+  };
+}
+
+function findChapter(sections, luku) {
+  const want = normLuku(luku);
+  let i = sections.findIndex((x) => x.num === want);
+  let note = null;
+  if (i < 0) {
+    const lw = want.toLowerCase();
+    const rank = (t) => (t === lw ? 0 : t.startsWith(lw) ? 1 : new RegExp(`(^|[\\s(-])${lw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(t) ? 2 : t.includes(lw) ? 3 : 9);
+    const cand = sections
+      .map((x, k) => [x, k, rank(x.title.toLowerCase())])
+      .filter((c) => c[2] < 9)
+      .sort((a, b) => a[2] - b[2] || a[1] - b[1]);
+    if (cand.length) {
+      i = cand[0][1];
+      if (cand.length > 1) note = `Otsikkoon "${want}" osui myös: ${cand.slice(1, 8).map(([x]) => secLabel(x)).join("; ")}.`;
+    }
+  }
+  return { i, note };
+}
+
+function ohjeHtmlOut(d, args) {
+  const src = ohjeSource(d.url, d.authority);
+  const toc = () => guideToc(d);
+  const pdfList = () => (d.pdfs.length ? ["", `Liitteet (PDF, lue viranomaisohje-työkalulla osoitteella):`, ...d.pdfs.map((p) => `- ${p.title}: ${p.url}`)] : []);
+  if (args.sivu) throw new UserError("sivu toimii vain PDF-tiedostoille. Verkkosivulta lue luku (luku) tai etsi hakusanalla.");
+  if (args.luku) {
+    const { i, note } = findChapter(d.sections, args.luku);
+    if (i < 0) return clip([...ohjeHead(d), "", `Lukua "${args.luku}" ei löytynyt. Sisällysluettelo:`, ...toc(), "", src].join("\n"));
+    const out = [...ohjeHead(d), ""];
+    if (note) out.push(note, "");
+    for (const x of guideChapter(d, i)) out.push(secLabel(x), x.text || "(ei tekstiä ennen alalukuja)", "");
+    out.push(src);
+    return clip(out.join("\n"));
+  }
+  if (args.hakusana) {
+    const q = String(args.hakusana).trim().toLowerCase();
+    if (!q) throw new UserError("Anna hakusana.");
+    const hits = [];
+    const scan = (label, text) => {
+      const r = excerpts(text, q);
+      if (r.n) hits.push({ label, ...r });
+    };
+    scan("Johdanto", d.intro);
+    for (const x of d.sections) scan(secLabel(x), `${x.title}\n${x.text}`);
+    const out = [...ohjeHead(d), "", `Hakusana "${args.hakusana}": ${hits.reduce((s, h) => s + h.n, 0)} osumaa ${hits.length} luvussa.`];
+    for (const h of hits.slice(0, 30)) {
+      out.push("", `${h.label} (${h.n})`);
+      for (const e of h.ex) out.push(`  ${e}`);
+    }
+    if (hits.length > 30) out.push("", `… ja ${hits.length - 30} muuta lukua.`);
+    if (!hits.length) out.push("Ei osumia. Haku on kirjaimellinen: kokeile sanan vartaloa. Liitteinä olevista PDF-tiedostoista haetaan erikseen niiden osoitteella.");
+    out.push("", "Lue luku sanatarkasti parametrilla luku.", src);
+    return clip(out.join("\n"));
+  }
+  const total = d.intro.length + d.sections.reduce((s, x) => s + x.text.length, 0);
+  const out = [...ohjeHead(d), ""];
+  if (total <= TIEDOTE_TEXT_MAX) {
+    if (d.intro) out.push(d.intro, "");
+    for (const x of d.sections) out.push(secLabel(x), x.text, "");
+  } else {
+    if (d.intro) out.push(d.intro.length > 3000 ? `${d.intro.slice(0, 3000)}…` : d.intro, "");
+    const ex = d.sections.find((x) => x.text && x.num)?.num ?? d.sections.find((x) => x.text)?.title ?? "1";
+    out.push(`Sisällysluettelo (noin ${Math.round(total / 1000)} 000 merkkiä; lue luku parametrilla luku, esim. "${ex}", tai etsi parametrilla hakusana):`, ...toc());
+  }
+  out.push(...pdfList(), "", src);
+  return clip(out.join("\n"));
+}
+
+// Numeroitu otsikko ilman pistettä numeron jälkeen ("2 Soveltamisala"); "1. Mitä…" on luettelo.
+const PDF_HEAD_RE = /^(\d{1,2}(?:\.\d{1,2}){0,3})\s+([A-ZÅÄÖ].{1,150})$/;
+const PDF_TOC_LINE = /(?:\.\s*){3,}\s*\d+\s*$/;
+
+/**
+ * PDF:n numeroitu luku. Sisällysluettelon otsikoiden avulla, jos sellainen on; muuten numeroiduista
+ * otsikkoriveistä. Luku päättyy seuraavaan samantasoiseen tai ylempään otsikkoon.
+ */
+function pdfChapter(pages, luku) {
+  const want = normLuku(luku);
+  const byNum = /^\d/.test(want);
+  const lines = [];
+  pages.forEach((p, pi) => {
+    for (const l of p.split("\n")) lines.push({ t: l.trim(), p: pi + 1 });
+  });
+  const depthOf = (n) => n.split(".").length;
+  const cut = (k0, k1, title) => {
+    const seg = lines.slice(k0, k1 >= 0 ? k1 : lines.length);
+    const text = seg.map((l) => l.t).join("\n");
+    return { from: seg[0].p, to: seg[seg.length - 1].p, title, text: text.length > 40_000 ? `${text.slice(0, 40_000)}\n… (katkaistu; lue loput sivu-parametrilla)` : text };
+  };
+  const toc = tocLines(pages)
+    .map((t) => t.match(/^(\d{1,2}(?:\.\d{1,2}){0,3})\.?\s+(.+?) \(s\. \d+\)$/))
+    .filter(Boolean)
+    .map((m) => ({ num: m[1], title: m[2] }));
+  if (toc.length) {
+    const norm = (t) => t.toLowerCase().replace(/^(\d+(?:\.\d+)*)\.?\s+/, "$1 ").replace(/\s+/g, " ");
+    const findLine = (e, from) => {
+      const pre = norm(`${e.num} ${e.title}`).slice(0, e.num.length + 1 + Math.min(20, e.title.length));
+      for (let k = from; k < lines.length; k++) if (!PDF_TOC_LINE.test(lines[k].t) && norm(lines[k].t).startsWith(pre)) return k;
+      return -1;
+    };
+    let i = toc.findIndex((e) => e.num === want);
+    if (i < 0 && !byNum) i = toc.findIndex((e) => e.title.toLowerCase().includes(want.toLowerCase()));
+    if (i >= 0) {
+      const e = toc[i];
+      const k0 = findLine(e, 0);
+      if (k0 >= 0) {
+        const next = toc.slice(i + 1).find((x) => depthOf(x.num) <= depthOf(e.num));
+        return cut(k0, next ? findLine(next, k0 + 1) : -1, `${e.num} ${e.title}`);
+      }
+    }
+  }
+  const heads = [];
+  lines.forEach((l, k) => {
+    const m = l.t.match(PDF_HEAD_RE);
+    if (m && !PDF_TOC_LINE.test(l.t)) heads.push({ k, num: m[1], title: m[2] });
+  });
+  const cands = heads.filter((h) => (byNum ? h.num === want : h.title.toLowerCase().includes(want.toLowerCase())));
+  if (!cands.length) return null;
+  // Sisällysluettelossa otsikot ovat peräkkäin; valitaan ehdokas, jota seuraa tekstiä.
+  const h = cands.find((x) => {
+    const nx = heads.find((y) => y.k > x.k);
+    return !nx || nx.k - x.k > 2;
+  }) ?? cands[cands.length - 1];
+  const end = heads.find((y) => y.k > h.k && depthOf(y.num) <= depthOf(h.num));
+  return cut(h.k, end ? end.k : -1, `${h.num} ${h.title}`);
+}
+
+function ohjePdfOut(doc, auth, args) {
+  const pages = doc.pages;
+  const src = ohjeSource(doc.url, auth);
+  const name = decodeURIComponent(new URL(doc.url).pathname.split("/").pop());
+  const head = [`${name} (PDF, ${pages.length} sivua, ${OHJE_AUTH[auth].name})`];
+  if (args.sivu) {
+    const r = parsePages(args.sivu, pages.length);
+    if (!r) throw new UserError(`Anna sivu tai sivualue väliltä 1–${pages.length}, esim. "3" tai "3-5".`);
+    const out = [...head, ""];
+    for (let p = r[0]; p <= r[1]; p++) out.push(`--- PDF:n sivu ${p} ---`, pages[p - 1], "");
+    out.push(src);
+    return clip(out.join("\n"));
+  }
+  if (args.luku) {
+    const c = pdfChapter(pages, args.luku);
+    if (!c) {
+      const toc = tocLines(pages);
+      return clip([...head, "", `Lukua "${args.luku}" ei tunnistettu.${toc.length ? " Sisällysluettelo:" : " Lue sivuittain parametrilla sivu."}`, ...toc, "", src].join("\n"));
+    }
+    return clip([...head, `Luku ${c.title}, PDF:n sivut ${c.from}${c.to !== c.from ? `–${c.to}` : ""}`, "", c.text, "", src].join("\n"));
+  }
+  if (args.hakusana) {
+    const q = String(args.hakusana).trim().toLowerCase();
+    if (!q) throw new UserError("Anna hakusana.");
+    const hits = [];
+    pages.forEach((p, i) => {
+      const r = excerpts(p, q);
+      if (r.n) hits.push({ page: i + 1, ...r });
+    });
+    const out = [...head, "", `Hakusana "${args.hakusana}": ${hits.reduce((s, h) => s + h.n, 0)} osumaa ${hits.length} sivulla.`];
+    for (const h of hits.slice(0, 30)) {
+      out.push("", `Sivu ${h.page} (${h.n})`);
+      for (const e of h.ex) out.push(`  ${e}`);
+    }
+    if (!hits.length) out.push("Ei osumia. Haku on kirjaimellinen: kokeile sanan vartaloa.");
+    out.push("", "Lue sivu parametrilla sivu tai luku parametrilla luku.", src);
+    return clip(out.join("\n"));
+  }
+  const total = pages.reduce((s, p) => s + p.length, 0);
+  const out = [...head, ""];
+  if (total <= TIEDOTE_TEXT_MAX) {
+    pages.forEach((p, i) => out.push(`--- PDF:n sivu ${i + 1} ---`, p, ""));
+  } else {
+    const toc = tocLines(pages);
+    out.push(pages[0].length > 2000 ? `${pages[0].slice(0, 2000)}…` : pages[0], "");
+    if (toc.length) out.push("Sisällysluettelo:", ...toc, "");
+    out.push(`Teksti noin ${Math.round(total / 1000)} 000 merkkiä. Lue luku parametrilla luku (esim. "2"), sivut parametrilla sivu (esim. "3-5") tai etsi parametrilla hakusana.`);
+  }
+  out.push("", src);
+  return clip(out.join("\n"));
+}
+
+async function viranomaisohje(args) {
+  const url = String(args.osoite ?? "").trim();
+  if (!/^https?:\/\//i.test(url)) throw new UserError("Anna ohjeen osoite (https://...), esim. hae_viranomaisohjeita-työkalun tuloksesta.");
+  let host = "";
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    throw new UserError("Virheellinen osoite.");
+  }
+  if (isBlockedHost(host)) throw new UserError("Fimean ja Tukesin sivut torjuvat automaattiset haut, joten niitä ei haeta. Lue sivu viraston sivustolta.");
+  const auth = authorityOf(url);
+  if (!auth) throw new UserError("Ohjeita luetaan vain sivustoilta kyberturvallisuuskeskus.fi (Traficom), tietosuoja.fi, kkv.fi ja prh.fi (https). Vero-ohjeet: viranomaistiedote-työkalu.");
+  const budget = newBudget();
+  if (/\.pdf$/i.test(new URL(url).pathname)) {
+    const doc = await ohjePdf(url, budget);
+    if (!doc) throw new UserError(`PDF-tiedostoa ei löytynyt: ${url}`);
+    return ohjePdfOut(doc, auth, args);
+  }
+  const d = await ohjePage(url, budget);
+  if (!d) throw new UserError(`Sivua ei löytynyt: ${url}`);
+  if (d.pdf) return ohjePdfOut(await ohjePdf(d.url, budget, d.bytes), auth, args);
+  if (!d.sections.length && !d.intro) throw new UserError(`Sivulta ei löytynyt ohjetekstiä: ${url}`);
+  return ohjeHtmlOut(d, args);
 }
 
 // ---------- Viranomaisratkaisut ----------
@@ -2835,6 +3128,8 @@ const HANDLERS = {
   viranomaistiedotteet,
   viranomaistiedote,
   hae_vero_ohjeita: haeVeroOhjeita,
+  hae_viranomaisohjeita: haeViranomaisohjeita,
+  viranomaisohje,
 };
 
 export async function callTool(name, args = {}) {
@@ -2849,6 +3144,10 @@ export async function callTool(name, args = {}) {
         ? e.message
         : e instanceof EduskuntaError
           ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof OhjeUserError
+          ? e.message
+          : e instanceof OhjeError
+          ? `Ohjeen haku viranomaisen sivustolta epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof TiedoteError
           ? `Tiedotteiden haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof HankeikkunaError
