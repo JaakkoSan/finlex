@@ -2,6 +2,7 @@
 // Ajo: node test/smoke.mjs   (vaatii Node 20+)
 
 import worker from "../src/index.js";
+import { kilaUrlAllowed } from "../src/kila.js";
 
 const env = {};
 let id = 0;
@@ -30,7 +31,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 24, "tools/list (24 työkalua)");
+check(list.result?.tools?.length === 26, "tools/list (26 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -105,4 +106,37 @@ for (const [name, args, pred] of cases) {
   const r = await tool(name, args);
   check(pred(r.text), `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
   if (show || !pred(r.text)) console.log(r.text.slice(0, 2500), "\n------");
+}
+
+// Kirjanpitolautakunta: oikea sivusto, robots.txt:n Crawl-delay 5 s, joten tapausten välillä tauko.
+const POISTOT = "https://kirjanpitolautakunta.fi/-/kirjanpitolautakunnan-yleisohje-suunnitelman-mukaisista-poistoista-6.10.2026";
+check(
+  kilaUrlAllowed("https://kirjanpitolautakunta.fi/-/ns-cross-border-leasing-jarjeste-1") &&
+    !kilaUrlAllowed("https://kirjanpitolautakunta.fi/-/q/leasing") &&
+    !kilaUrlAllowed("https://kirjanpitolautakunta.fi/haku/?q=leasing") &&
+    !kilaUrlAllowed("https://kirjanpitolautakunta.fi/web/guest/etusivu") &&
+    !kilaUrlAllowed("https://kirjanpitolautakunta.fi/fi/web/x") &&
+    !kilaUrlAllowed("https://kirjanpitolautakunta.fi/sv/sok/x") &&
+    !kilaUrlAllowed("https://example.com/-/x"),
+  "kilaUrlAllowed (robots.txt:n kiellot ja vieras osoite hylätään)",
+);
+{
+  const r = await tool("kila_lausunto", { osoite: "https://kirjanpitolautakunta.fi/-/q/leasing" });
+  check(r.isError && r.text.includes("robots.txt"), "kila_lausunto hylkää robots.txt:n kieltämän polun");
+}
+const kilaCases = [
+  ["hae_kila_lausuntoja", { hakusana: "leasing" }, (t) => t.includes("1998/1516") && t.includes("cross-border leasing") && t.includes("Lähde: https://kirjanpitolautakunta.fi/")],
+  ["hae_kila_lausuntoja", { numero: "2010/1861" }, (t) => t.includes("2010/1861") && t.includes("Investointiavustusten")],
+  ["kila_lausunto", { numero: "1998/1516" }, (t) => t.includes("lausunto 1998/1516, annettu 26.1.1998") && t.includes("3 Kirjanpitolautakunnan lausunto") && t.includes("bruttomääräisinä") && t.includes("hakijan kuvaamaa tapausta") && t.includes("Lähde: https://kirjanpitolautakunta.fi/-/ns-cross-border-leasing-jarjeste-1")],
+  ["kila_lausunto", { numero: "2010/1861", hakusana: "avustu" }, (t) => t.includes("Investointiavustusten") && t.includes("osumaa")],
+  ["hae_kila_lausuntoja", { tyyppi: "yleisohje", hakusana: "poisto", voimassa: true }, (t) => t.includes("suunnitelman mukaisista poistoista 6.10.2026") && !t.includes("aiempi ·")],
+  ["kila_lausunto", { osoite: POISTOT, luku: "2.4" }, (t) => t.includes("2.4 Jäännösarvo") && t.includes("Jäännösarvon määrittelyssä") && !t.includes("2.5 Avustuksella") && t.includes("ei lakia")],
+  ["kila_lausunto", { osoite: POISTOT, liite: "1" }, (t) => t.includes("Liite: ") && t.includes("liite 1.pdf") && t.includes("Lähde: https://kirjanpitolautakunta.fi/documents/")],
+];
+for (const [name, args, pred] of kilaCases) {
+  await new Promise((r) => setTimeout(r, 5000));
+  const t0 = Date.now();
+  const r = await tool(name, args);
+  check(!r.isError && pred(r.text), `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
+  if (show || r.isError || !pred(r.text)) console.log(r.text.slice(0, 2500), "\n------");
 }

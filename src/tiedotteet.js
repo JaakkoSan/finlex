@@ -116,7 +116,7 @@ export async function feedItems(key) {
   return out;
 }
 
-function htmlText(s) {
+export function htmlText(s) {
   return decode(
     String(s)
       .replace(/\s*[\r\n]+\s*/g, " ")
