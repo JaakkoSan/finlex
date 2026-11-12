@@ -219,6 +219,160 @@ export async function veroSearch({ query = "", types = [7], lang = "fi", sort = 
   return { total: d.TotalCount ?? hits.length, hasMore: !!d.HasMore, hits };
 }
 
+/** Ohjesivun versiotiedot (Antopäivä, Diaarinumero, Voimassaolo, Korvaa ohjeen ...) pareina [nimi, arvo]. */
+function pageVersionMeta(html) {
+  const meta = [];
+  const pvStart = html.indexOf('<div class="page-version">');
+  let pvHtml = pvStart >= 0 ? html.slice(pvStart, pvStart + 6000) : "";
+  const pvEnd = pvHtml.search(/page-version__info--summary|<article/);
+  if (pvEnd > 0) pvHtml = pvHtml.slice(0, pvEnd);
+  for (const m of pvHtml.matchAll(/<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/gi)) {
+    const k = htmlText(m[1]);
+    const v = htmlText(m[2]).replace(/\s+/g, " ");
+    if (k && v) meta.push([k, v]);
+  }
+  return meta;
+}
+
+// ---------- Haku diaarinumerolla ----------
+// Vero.fi:n haku ei indeksoi diaarinumeroa, eikä hakurajapinnassa ole sille parametria
+// (12.11.2026: "VH/7418/00.01.00/2025" osui vain sanaan 2025, "7418" antoi 0 osumaa).
+// Diaarinumero on vain ohjesivun versiotiedoissa, joten ehdokkaat luetaan sivuilta
+// todennäköisimmästä alkaen. Sivusta luetaan vain alku versiotietoihin asti, ja löydetyt
+// diaarinumerot tallennetaan yhteen hakemistoon välimuistiin.
+
+/** Diaarinumero, esim. VH/7418/00.01.00/2025 tai vanha muoto A152/200/2012. */
+const DIAARI_RE = /^([A-ZÅÄÖ]{1,4})\s*\/?\s*(\d{1,6})\s*\/\s*(\d{1,4}(?:\.\d{1,4}){0,3})\s*\/\s*((?:19|20)\d{2})$/i;
+const DIAARI_ANY = /\b[A-ZÅÄÖ]{1,4}\s*\/?\s*\d{1,6}\s*\/\s*\d{1,4}(?:\.\d{1,4}){0,3}\s*\/\s*(?:19|20)\d{2}\b/gi;
+const normDiaari = (s) => String(s).replace(/\s+/g, "").toUpperCase();
+
+/** Palauttaa normalisoidun diaarinumeron, jos teksti on pelkkä diaarinumero, muuten null. */
+export function asDiaari(text) {
+  const m = String(text ?? "").trim().match(DIAARI_RE);
+  return m ? normDiaari(m[0]) : null;
+}
+
+const DIAARI_INDEX_KEY = `${VERO}/api/search/results?_diaarihakemisto=1`;
+const DIAARI_MEM = new Map(); // osoite -> [diaarinumero | null, antopäivä | null, korvatut diaarinumerot[]]
+
+/** Lukee sivun alun, kunnes versiotiedot ovat mukana, ja katkaisee latauksen. */
+async function getHead(url) {
+  let last;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "text/html" } });
+    } catch (e) {
+      last = new TiedoteError(`yhteys epäonnistui: ${e?.message ?? e}`, 0);
+      await sleep(500 * 2 ** attempt);
+      continue;
+    }
+    if (res.status === 404) return null;
+    if (res.ok) {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let html = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        html += dec.decode(value, { stream: true });
+        const pv = html.indexOf('<div class="page-version">');
+        if ((pv >= 0 && /page-version__info--summary|<article/.test(html.slice(pv))) || html.length > 400000) {
+          await reader.cancel().catch(() => {});
+          break;
+        }
+      }
+      return html;
+    }
+    last = new TiedoteError(`palvelin vastasi ${res.status}`, res.status);
+    if (!RETRY_STATUS.has(res.status)) break;
+    await sleep(800 * 2 ** attempt);
+  }
+  throw last;
+}
+
+async function pageDiaari(url) {
+  const html = await getHead(url);
+  if (!html) return [null, null, []];
+  const meta = pageVersionMeta(html);
+  const val = (re) => meta.find(([k]) => re.test(k))?.[1] ?? null;
+  const d = val(/^Diaarinumero$/i);
+  return [d ? normDiaari(d) : null, val(/^Antopäivä$/i), (val(/^Korvaa ohjeen$/i)?.match(DIAARI_ANY) ?? []).map(normDiaari)];
+}
+
+/** Kaikki hakutulokset tyypeittäin (vero.fi palauttaa enintään 50 sivua kohden). */
+async function listAll(types, lang, all) {
+  const one = (page) => veroSearch({ query: "", types, lang, sort: 1, page, pageSize: 50, all });
+  const first = await one(1);
+  const out = [...first.hits];
+  const pages = first.hasMore ? Math.min(100, Math.ceil(first.total / 50)) : 1;
+  for (let p = 2; p <= pages; p += 8) {
+    const rs = await Promise.all(Array.from({ length: Math.min(8, pages - p + 1) }, (_, k) => one(p + k)));
+    for (const r of rs) out.push(...r.hits);
+  }
+  return out;
+}
+
+/**
+ * Etsii ohjeen diaarinumerolla. Ehdokkaat järjestetään arvioidun antopäivän mukaan
+ * (numerot juoksevat vuoden mittaan, n. 8 000 vuodessa); ensin voimassa olevat versiot, sitten
+ * korvatut. Yhdellä kutsulla luetaan enintään `budget` uutta sivua.
+ * Palauttaa { hit, meta, replacedBy: [{ hit, meta }], checked, complete }; complete = kaikki ehdokkaat käyty läpi.
+ */
+export async function veroFindDiaari(diaari, { types = [7, 8, 9], lang = "fi", budget = 200 } = {}) {
+  const want = normDiaari(diaari);
+  const m = want.match(DIAARI_RE);
+  const year = Number(m[4]);
+  const est = Date.UTC(year, 0, 1) + (Number(m[2]) / 8000) * 365 * 86400000 + 30 * 86400000;
+  const stored = await cacheGetJson(DIAARI_INDEX_KEY);
+  if (stored) for (const [u, v] of Object.entries(stored)) if (!DIAARI_MEM.has(u)) DIAARI_MEM.set(u, v);
+  let fetched = 0;
+  let checked = 0;
+  let complete = true;
+  const replacedBy = [];
+  const seen = new Set();
+  let found = null;
+  for (const all of [false, true]) {
+    const cands = (await listAll(types, lang, all)).filter((h) => !seen.has(h.url));
+    for (const h of cands) seen.add(h.url);
+    const dist = (h) => (h.date ? Math.abs(Date.parse(h.date) - est) : Infinity);
+    cands.sort((a, b) => dist(a) - dist(b));
+    // Välimuistissa olevat ensin: ne eivät maksa hakua.
+    const known = cands.filter((h) => DIAARI_MEM.has(h.url));
+    const unknown = cands.filter((h) => !DIAARI_MEM.has(h.url));
+    const look = (h) => {
+      const v = DIAARI_MEM.get(h.url);
+      checked++;
+      if (v[0] === want) found = { hit: h, meta: v };
+      else if (v[2]?.includes(want) && !replacedBy.some((r) => r.hit.url === h.url)) replacedBy.push({ hit: h, meta: v });
+    };
+    for (const h of known) {
+      look(h);
+      if (found) break;
+    }
+    // Jos voimassa oleva ohje korvaa haetun, haettu on korvattujen versioiden joukossa.
+    const skip = () => !all && replacedBy.length > 0;
+    for (let i = 0; !found && !skip() && i < unknown.length; i += 8) {
+      if (fetched >= budget) {
+        complete = false;
+        break;
+      }
+      const batch = unknown.slice(i, i + 8);
+      const res = await Promise.allSettled(batch.map((h) => pageDiaari(h.url)));
+      batch.forEach((h, k) => {
+        fetched++;
+        if (res[k].status === "fulfilled") {
+          DIAARI_MEM.set(h.url, res[k].value);
+          look(h);
+        }
+      });
+    }
+    if (found || !complete) break;
+  }
+  if (fetched) await cachePutJson(DIAARI_INDEX_KEY, Object.fromEntries(DIAARI_MEM), 30 * 86400);
+  return { hit: found?.hit ?? null, meta: found?.meta ?? null, replacedBy, checked, complete: !!found || complete };
+}
+
 const AUTHOR_RE = /^(johtava |vanhempi |erikois)?(vero)?(asiantuntija|ylitarkastaja|tarkastaja|lakimies|johtaja|päällikkö|neuvos|ylijohtaja|apulaisjohtaja|ryhmäpäällikkö|ohjaus)/i;
 
 /**
@@ -251,16 +405,7 @@ export async function veroGuide(url) {
   if (end >= 0) body = body.slice(0, end);
 
   const title = htmlText(html.match(/<span id="main-heading">([\s\S]*?)<\/span>/i)?.[1] ?? html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "");
-  const meta = [];
-  const pvStart = html.indexOf('<div class="page-version">');
-  let pvHtml = pvStart >= 0 ? html.slice(pvStart, pvStart + 6000) : "";
-  const pvEnd = pvHtml.search(/page-version__info--summary|<article/);
-  if (pvEnd > 0) pvHtml = pvHtml.slice(0, pvEnd);
-  for (const m of pvHtml.matchAll(/<dt>([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/gi)) {
-    const k = htmlText(m[1]);
-    const v = htmlText(m[2]).replace(/\s+/g, " ");
-    if (k && v) meta.push([k, v]);
-  }
+  const meta = pageVersionMeta(html);
 
   const heads = [...body.matchAll(/<h([2-6])[^>]*>([\s\S]*?)<\/h\1>/gi)];
   const sections = [];

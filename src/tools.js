@@ -32,7 +32,7 @@ import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterI
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
-import { FEEDS, TiedoteError, feedItems, itemText, veroSearch, veroGuide, VERO_TYPES } from "./tiedotteet.js";
+import { FEEDS, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -386,12 +386,12 @@ export const TOOLS = [
   {
     name: "hae_vero_ohjeita",
     description:
-      "Hakee Verohallinnon syventäviä vero-ohjeita (sekä halutessa Verohallinnon päätöksiä, kannanottoja ja keskusverolautakunnan ennakkoratkaisuja) koko arkistosta otsikon ja tekstin sanoilla vero.fi:n hakurajapinnasta. Palauttaa otsikon, päivän, osoitteen ja otteen. Lue ohje tai sen luku viranomaistiedote-työkalulla (osoite, luku, hakusana).",
+      "Hakee Verohallinnon syventäviä vero-ohjeita (sekä halutessa Verohallinnon päätöksiä, kannanottoja ja keskusverolautakunnan ennakkoratkaisuja) koko arkistosta otsikon ja tekstin sanoilla vero.fi:n hakurajapinnasta tai diaarinumerolla (myös korvatut versiot). Palauttaa otsikon, päivän, osoitteen ja otteen. Lue ohje tai sen luku viranomaistiedote-työkalulla (osoite, luku, hakusana).",
     inputSchema: {
       type: "object",
       properties: {
-        hakusana: { type: "string", description: "Sanat, esim. \"vuokratulojen verotus\" tai \"remontti\". Tyhjä = uusimmat." },
-        tyyppi: { type: "string", description: "ohje (oletus), paatos, kannanotto, kvl tai kaikki. Useita pilkulla erotettuna." },
+        hakusana: { type: "string", description: "Sanat, esim. \"vuokratulojen verotus\" tai \"remontti\", tai diaarinumero, esim. \"VH/7418/00.01.00/2025\". Tyhjä = uusimmat." },
+        tyyppi: { type: "string", description: "ohje (oletus; diaarinumerolla ohje, paatos ja kannanotto), paatos, kannanotto, kvl tai kaikki. Useita pilkulla erotettuna." },
         jarjestys: { type: "string", enum: ["osuvuus", "uusin", "vanhin", "nimi"], description: "osuvuus (oletus, tai uusin kun hakusana puuttuu), uusin, vanhin tai nimi." },
         vuosi: { type: "integer", description: "Julkaisuvuosi. Valinnainen." },
         vanhat_versiot: { type: "boolean", description: "Näytä myös korvatut ohjeversiot. Oletus: ei." },
@@ -1949,16 +1949,48 @@ function veroGuideOut(g, args) {
   return clip(out.join("\n"));
 }
 
+async function veroDiaariOut(diaari, keys, lang) {
+  const r = await veroFindDiaari(diaari, { types: keys.map((k) => VERO_TYPES[k].id), lang });
+  const names = keys.map((k) => VERO_TYPES[k].name).join(", ");
+  const line = ({ hit: h, meta: [d, given] }) => [
+    `${given ?? (h.date ? fmtDate(h.date) : "?")} · ${h.type ?? ""}${h.latest ? "" : " · KORVATTU VERSIO"} · ${h.title}`,
+    `  Diaarinumero: ${d ?? "?"}`,
+    `  ${h.url}`,
+  ];
+  const out = [`Verohallinnon haku diaarinumerolla ${diaari} (${names}):`];
+  if (r.hit) {
+    out.push("", ...line(r));
+    if (!r.hit.latest) out.push("", "Tämä on korvattu ohjeversio. Voimassa olevan version löytää samalla otsikolla.");
+  } else if (r.complete) {
+    out.push(`Ei osumaa ${r.checked} ohjeesta. Tarkista diaarinumero tai tyyppi (myös paatos, kannanotto, kvl tai kaikki).`);
+  } else {
+    out.push(`Ei vielä osumaa: ${r.checked} ohjetta tarkistettu, osa on tarkistamatta. Tee sama haku uudelleen, niin haku jatkuu tarkistamattomista.`);
+  }
+  for (const x of r.replacedBy) {
+    if (x.hit.url === r.hit?.url) continue;
+    out.push("", `Korvaava ohje (korvaa diaarinumeron ${diaari}):`, ...line(x));
+  }
+  out.push(
+    "",
+    "Vero.fi:n haku ei hae diaarinumerolla, joten se luettiin ohjesivujen versiotiedoista.",
+    "Lue ohje, sen luku tai hakusanan osumat viranomaistiedote-työkalulla (osoite, luku, hakusana).",
+    "Lähde: Verohallinto, vero.fi (https://www.vero.fi/syventavat-vero-ohjeet/).",
+  );
+  return out.join("\n");
+}
+
 async function haeVeroOhjeita(args) {
-  const want = String(args.tyyppi ?? "ohje").trim().toLowerCase();
+  const diaari = asDiaari(args.hakusana);
+  const want = String(args.tyyppi ?? (diaari ? "ohje,paatos,kannanotto" : "ohje")).trim().toLowerCase();
   const keys = want === "kaikki" ? Object.keys(VERO_TYPES) : want.split(/[,\s]+/).filter(Boolean);
   for (const k of keys) if (!VERO_TYPES[k]) throw new UserError(`tyyppi: ${Object.keys(VERO_TYPES).join(", ")} tai kaikki.`);
+  const lang = args.kieli === "sv" ? "sv" : "fi";
+  if (diaari) return veroDiaariOut(diaari, keys, lang);
   const query = String(args.hakusana ?? "").trim();
   const SORT = { osuvuus: 0, uusin: 1, vanhin: 2, nimi: 3 };
   const sort = args.jarjestys ? SORT[args.jarjestys] : query ? 0 : 1;
   if (sort === undefined) throw new UserError("jarjestys: osuvuus, uusin, vanhin tai nimi.");
   const page = asPage(args.sivu);
-  const lang = args.kieli === "sv" ? "sv" : "fi";
   const year = args.vuosi ? asYear(args.vuosi) : undefined;
   const r = await veroSearch({ query, types: keys.map((k) => VERO_TYPES[k].id), lang, sort, page, pageSize: 10, all: !!args.vanhat_versiot, year });
   const names = keys.map((k) => VERO_TYPES[k].name).join(", ");

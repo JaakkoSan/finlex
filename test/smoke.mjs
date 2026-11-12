@@ -61,6 +61,8 @@ const cases = [
   ["viranomaistiedotteet", { viranomainen: "tukes", hakusana: "kosmet" }, (t) => t.includes("Tukes ·") && t.includes("tukes.fi/-/")],
   ["viranomaistiedote", { osoite: "https://www.sttinfo.fi/tiedote/72460137/perintayhtio-ei-voi-peria-riitautettua-saatavaa?lang=fi" }, (t) => t.includes("Perintäyhtiö ei voi periä") && !t.includes("Yhteyshenkilöt")],
   ["hae_vero_ohjeita", { hakusana: "vuokratulojen verotus" }, (t) => t.includes("Vuokratulojen verotus") && t.includes("https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/")],
+  ["hae_vero_ohjeita", { hakusana: "VH/7418/00.01.00/2025" }, (t) => t.includes("Diaarinumero: VH/7418/00.01.00/2025") && t.includes("https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/") && !t.includes("KORVATTU")],
+  ["hae_vero_ohjeita", { hakusana: "VH/6000/00.01.00/2024" }, (t) => t.includes("KORVATTU VERSIO") && t.includes("vuokratulojen-verotus7/") && t.includes("Korvaava ohje") && t.includes("vuokratulojen-verotus8/")],
   ["hae_vero_ohjeita", { tyyppi: "kvl", jarjestys: "uusin" }, (t) => t.includes("KVL:n ennakkoratkaisu") && t.includes("vero.fi/")],
   ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/" }, (t) => t.includes("Diaarinumero: VH/") && t.includes("Sisällysluettelo") && t.includes("3.7.3 Korjausmenot")],
   ["viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", luku: "3.7.3" }, (t) => t.includes("3.7.3 Korjausmenot asunnon tai rakennuksen hankinnan yhteydessä") && t.includes("KHO 2000:51") && !t.includes("3.7.4 Oman")],
