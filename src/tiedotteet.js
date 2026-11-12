@@ -11,13 +11,19 @@
 // - Kyberturvallisuuskeskus (Traficom): https://www.kyberturvallisuuskeskus.fi/feed/rss/fi (kaikki ajankohtaiset)
 // - KKV: https://www.kkv.fi/feed/?post_type=current-cpt&post_parent=1392 (ajankohtaista-sivun RSS-linkki)
 //   (lisätty 12.11.2026; tekstit luetaan ohjeet.js:n kautta, joka noudattaa robots.txt:tä)
+// - Hyvinvointialueet (lisätty ja tarkistettu 12.11.2026): 12 aluetta, HUS ja Helsingin sote
+//   STT Infon uutishuoneista (STT Info: RSS-tilaus kaikille, aineisto vapaasti julkaistavissa,
+//   ellei toisin mainita; robots.txt Crawl-delay 1, joten STT Infon haut tehdään 1 s välein) ja
+//   7 aluetta omasta RSS-syötteestä. robots.txt sallii syötteet ja tiedotesivut kaikilla
+//   (ekhva.fi ja siunsote.fi: ei robots.txt-tiedostoa). Pohjois-Savo (robots.txt kieltää) ja
+//   Lappi (ei syötettä) puuttuvat.
 // Fimean ja Tukesin verkkosivut torjuvat automaattiset haut (403), joten niiden tiedotteista
 // näytetään vain syötteen tiedot. Tiedotteen teksti haetaan vain vero.fi:stä ja sttinfo.fi:stä
 // (robots.txt sallii; STT Info pyytää 1 s viivettä, ja haut välimuistitetaan).
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 
-const USER_AGENT = "finlex-mcp/1.12 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = "finlex-mcp/1.13 (Claude-liitin; Cloudflare Worker)";
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export class TiedoteError extends FinlexError {}
@@ -33,6 +39,41 @@ export const FEEDS = {
   kkv: { name: "Kilpailu- ja kuluttajavirasto (KKV), ajankohtaista", short: "KKV", url: "https://www.kkv.fi/feed/?post_type=current-cpt&post_parent=1392", text: true },
 };
 
+// Hyvinvointialueiden tiedotteet. page = tiedotesivun tekstin rajaus: start-merkit haetaan
+// peräkkäin, ja teksti päättyy ensimmäiseen end-merkkiin.
+const STT = (id) => `https://www.sttinfo.fi/rss/releases/latest?publisherId=${id}`;
+const WP_ARTICLE = { start: ["<article", "</header>"], end: ["Jaa tämä sivu", "</article>"] };
+const WP_BLOCKS = { start: ['<div class="entry-content'], end: ["Lisää tiedot", "</main>"] };
+export const HVA_FEEDS = {
+  ita_uusimaa: { name: "Itä-Uudenmaan hyvinvointialue", short: "HVA Itä-Uusimaa", url: STT(69819601) },
+  keski_uusimaa: { name: "Keski-Uudenmaan hyvinvointialue (Keusote)", short: "HVA Keski-Uusimaa", url: STT(69819221) },
+  lansi_uusimaa: { name: "Länsi-Uudenmaan hyvinvointialue", short: "HVA Länsi-Uusimaa", url: STT(69818831) },
+  vantaa_kerava: { name: "Vantaan ja Keravan hyvinvointialue", short: "HVA Vantaa-Kerava", url: STT(69819818) },
+  helsinki: { name: "Helsingin kaupunki, sosiaali-, terveys- ja pelastustoimiala", short: "Helsingin sote", url: STT(60590302) },
+  hus: { name: "HUS-yhtymä", short: "HUS", url: STT(23980819) },
+  varsinais_suomi: { name: "Varsinais-Suomen hyvinvointialue (Varha)", short: "HVA Varsinais-Suomi", url: STT(69820130) },
+  satakunta: { name: "Satakunnan hyvinvointialue", short: "HVA Satakunta", url: "https://satakunnanhyvinvointialue.fi/ajankohtaista/feed/", page: WP_ARTICLE },
+  kanta_hame: { name: "Kanta-Hämeen hyvinvointialue (Oma Häme)", short: "HVA Kanta-Häme", url: STT(69820726) },
+  pirkanmaa: { name: "Pirkanmaan hyvinvointialue", short: "HVA Pirkanmaa", url: STT(69818823) },
+  paijat_hame: { name: "Päijät-Hämeen hyvinvointialue", short: "HVA Päijät-Häme", url: STT(69820870) },
+  kymenlaakso: { name: "Kymenlaakson hyvinvointialue", short: "HVA Kymenlaakso", url: STT(69820505) },
+  etela_karjala: { name: "Etelä-Karjalan hyvinvointialue", short: "HVA Etelä-Karjala", url: "https://www.ekhva.fi/kategoria/mediatiedotteet/feed/", page: WP_BLOCKS },
+  etela_savo: { name: "Etelä-Savon hyvinvointialue (Eloisa)", short: "HVA Etelä-Savo", url: "https://etelasavonha.fi/category/uutiset/feed/", page: WP_ARTICLE },
+  pohjois_karjala: { name: "Pohjois-Karjalan hyvinvointialue (Siun sote)", short: "HVA Pohjois-Karjala", url: "https://www.siunsote.fi/kategoria/tiedote/feed/", page: WP_BLOCKS },
+  keski_suomi: { name: "Keski-Suomen hyvinvointialue", short: "HVA Keski-Suomi", url: STT(69821063) },
+  etela_pohjanmaa: { name: "Etelä-Pohjanmaan hyvinvointialue", short: "HVA Etelä-Pohjanmaa", url: "https://www.hyvaep.fi/feed/?post_type=notices", page: { start: ["<div class=wysiwyg-content>"], end: ['<div class="container article-tags">', '<section class="notice-highlights', "</main>"] } },
+  pohjanmaa: { name: "Pohjanmaan hyvinvointialue", short: "HVA Pohjanmaa", url: STT(69820565) },
+  keski_pohjanmaa: { name: "Keski-Pohjanmaan hyvinvointialue (Soite)", short: "HVA Keski-Pohjanmaa", url: "https://soite.fi/category/tiedote/feed/", page: { start: ['<div class="main-content-area readspeaker-read'], end: ['<section class="rekai', "Sisältö liittyy seuraaviin", "</article>"] } },
+  pohjois_pohjanmaa: { name: "Pohjois-Pohjanmaan hyvinvointialue (Pohde)", short: "HVA Pohjois-Pohjanmaa", url: STT(69817636) },
+  kainuu: { name: "Kainuun hyvinvointialue", short: "HVA Kainuu", url: "https://hyvinvointialue.kainuu.fi/ajankohtaista/rss.xml", page: { start: ['<div class="content-body">'], end: ["</article>"] } },
+};
+for (const [k, f] of Object.entries(HVA_FEEDS)) FEEDS[k] = { ...f, text: true, hva: true };
+/** Alueet, joilta ei ole syötettä. */
+export const HVA_MISSING = "Pohjois-Savo (sivuston robots.txt kieltää automaattiset haut) ja Lappi (ei tiedotesyötettä)";
+/** Hyvinvointialueen oma sivusto: isäntänimi -> syötteen avain. */
+const HVA_HOSTS = new Map(Object.entries(HVA_FEEDS).filter(([, f]) => f.page).map(([k, f]) => [new URL(f.url).hostname, k]));
+const hvaKeyOf = (u) => HVA_HOSTS.get(u.hostname) ?? HVA_HOSTS.get(u.hostname.startsWith("www.") ? u.hostname.slice(4) : `www.${u.hostname}`) ?? null;
+
 const TEXT_HOSTS = new Set(["www.vero.fi", "vero.fi", "www.sttinfo.fi", "sttinfo.fi"]);
 
 function cacheApi() {
@@ -45,6 +86,16 @@ function cacheApi() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// STT Infon robots.txt: Crawl-delay 1. Saman isolaatin haut sttinfo.fi:hin vähintään 1 s välein.
+let sttNext = 0;
+async function polite(url) {
+  if (!/(^|\.)sttinfo\.fi$/.test(new URL(url).hostname)) return;
+  const now = Date.now();
+  const at = Math.max(now, sttNext);
+  sttNext = at + 1000;
+  if (at > now) await sleep(at - now);
+}
+
 async function get(url, ttl) {
   const cache = cacheApi();
   const key = new Request(url);
@@ -56,6 +107,7 @@ async function get(url, ttl) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let res;
     try {
+      await polite(url);
       res = await fetch(url, { headers: { "User-Agent": USER_AGENT, "Accept-Language": "fi", Accept: "application/rss+xml, application/xml, text/xml, text/html;q=0.8" } });
     } catch (e) {
       last = new TiedoteError(`yhteys epäonnistui: ${e?.message ?? e}`, 0);
@@ -139,12 +191,62 @@ export function htmlText(s) {
       .replace(/<[^>]+>/g, ""),
   )
     .split("\n")
-    .map((l) => l.replace(/[ \t ]+/g, " ").trim().replace(/\s*\|$/, ""))
+    .map((l) => l.replace(/[\u00ad\u200b]/g, "").replace(/[ \t ]+/g, " ").trim().replace(/\s*\|$/, ""))
     .filter(Boolean)
     .join("\n");
 }
 
-/** Tiedotteen teksti (vain vero.fi ja sttinfo.fi). Palauttaa { title, date, text } tai null. */
+/** Rajaa tekstin merkeillä: start-merkit peräkkäin, loppu ensimmäiseen end-merkkiin. */
+function cut(html, { start, end }) {
+  let i = 0;
+  for (const m of start) {
+    const j = html.indexOf(m, i);
+    if (j < 0) return null;
+    i = j + m.length;
+  }
+  i = html.indexOf(">", i - 1) + 1;
+  let e = html.length;
+  for (const m of end) {
+    const j = html.indexOf(m, i);
+    if (j >= 0 && j < e) e = j;
+  }
+  return { body: html.slice(i, e), at: i };
+}
+
+const fiDate = (iso) => {
+  const m = String(iso ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${+m[3]}.${+m[2]}.${m[1]}` : "";
+};
+
+// Yhteyshenkilöiden nimet, puhelinnumerot ja sähköpostit jätetään pois (kuten STT Infon tiedotteista):
+// lopun "Lisätietoja"-osio poistetaan, jos siinä on puhelinnumero tai sähköpostiosoite.
+const CONTACT_HEAD = /^(lisätiet\w*|yhteyshenkilö\w*|tiedustelut)(\s+(antaa|antavat))?\s*:?\s*$/i;
+const CONTACT_INFO = /\b0\d{1,3}[\s-]?\d{3}[\s-]?\d{3,4}\b|\+358|@|\[email protected\]|\bp\.\s*\d/i;
+function dropContacts(text) {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 12); i--) {
+    if (CONTACT_HEAD.test(lines[i]) && lines.slice(i + 1).some((l) => CONTACT_INFO.test(l))) return lines.slice(0, i).join("\n");
+  }
+  return text;
+}
+
+/** Hyvinvointialueen oman sivuston tiedotesivu: { title, date, text } tai null. */
+function hvaPage(html, page) {
+  const c = cut(html, page);
+  if (!c) return null;
+  const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const title = htmlText(h1?.[1] ?? "").replace(/\s+/g, " ");
+  // Päivä: julkaisuaika metatiedoista, otsikon ja tekstin välistä <time>-elementistä tai päivämäärärivistä.
+  const head = html.slice(h1 ? h1.index : 0, c.at);
+  const date =
+    fiDate(head.match(/datetime="([^"]+)"/i)?.[1]) ||
+    fiDate(html.match(/<meta[^>]+property="article:published_time"[^>]+content="([^"]+)"/i)?.[1]) ||
+    (htmlText(html.slice(Math.max(0, (h1?.index ?? 0) - 1500), c.at).replace(/<(svg|script|style)[\s\S]*?<\/\1>/gi, "")).match(/\b\d{1,2}\.\d{1,2}\.20\d{2}\b/)?.[0] ?? "");
+  const body = c.body.replace(/<!--[\s\S]*?-->/g, "").replace(/<(nav|figure|form|aside)\b[\s\S]*?<\/\1>/gi, "");
+  return { title, date, text: dropContacts(htmlText(body)) };
+}
+
+/** Tiedotteen teksti (vero.fi, sttinfo.fi ja hyvinvointialueiden omat sivustot). Palauttaa { title, date, text, source } tai null. */
 export async function itemText(url) {
   let u;
   try {
@@ -152,14 +254,18 @@ export async function itemText(url) {
   } catch {
     return null;
   }
-  if (u.protocol !== "https:" || !TEXT_HOSTS.has(u.hostname)) return null;
-  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_tiedote=1`;
+  const hva = u.protocol === "https:" ? hvaKeyOf(u) : null;
+  if (u.protocol !== "https:" || (!TEXT_HOSTS.has(u.hostname) && !hva)) return null;
+  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_tiedote=2`;
   const hit = await cacheGetJson(key);
   if (hit) return hit;
   const html = await get(u.href, 0);
   if (!html) return null;
   let out = null;
-  if (u.hostname.endsWith("vero.fi")) {
+  if (hva) {
+    out = hvaPage(html, HVA_FEEDS[hva].page);
+    if (out) out.source = HVA_FEEDS[hva].name;
+  } else if (u.hostname.endsWith("vero.fi")) {
     const m = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
     if (m) {
       const title = htmlText(m[1].match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? "");
@@ -177,8 +283,10 @@ export async function itemText(url) {
       // Yhteyshenkilöiden nimet ja puhelinnumerot jätetään pois; jakopainike pois.
       text = text.split(/\n(?:Yhteyshenkilöt|Kontaktpersoner|Contacts)\n/)[0];
       const lines = text.split("\n").filter((l) => l !== "Jaa");
-      const date = lines[0] && /\d{1,2}\.\d{1,2}\.\d{4}/.test(lines[0]) ? lines.shift() : "";
-      out = { title, date, text: lines.join("\n") };
+      const first = lines[0] && /\d{1,2}\.\d{1,2}\.\d{4}/.test(lines[0]) ? lines.shift() : "";
+      // Päivärivi on muotoa "12.11.2026 08:30:00 EET | HUS | Tiedote": julkaisija keskellä.
+      const parts = first.split("|").map((x) => x.trim());
+      out = { title, date: first, text: lines.join("\n"), source: parts.length >= 2 ? parts[1] : null };
     }
   }
   if (out && !out.title) out.title = htmlText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").replace(/\s*[-|–]\s*(vero\.fi|STT Info).*$/i, "");

@@ -32,7 +32,7 @@ import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterI
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
-import { FEEDS, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
+import { FEEDS, HVA_MISSING, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
 import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, guideList, docPage, findByNumber, guideText, attachmentText, splitGuidePdfs, isExemption } from "./kila.js";
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
@@ -360,11 +360,11 @@ export const TOOLS = [
   {
     name: "viranomaistiedotteet",
     description:
-      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV. Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
+      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Pohjois-Savoa eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
     inputSchema: {
       type: "object",
       properties: {
-        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet, tietosuoja, kyber, kkv tai kaikki (oletus). Useita pilkulla erotettuna." },
+        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet, tietosuoja, kyber, kkv; hyvinvointialue: hyvinvointialueet (kaikki), hus, helsinki, ita_uusimaa, keski_uusimaa, lansi_uusimaa, vantaa_kerava, varsinais_suomi, satakunta, kanta_hame, pirkanmaa, paijat_hame, kymenlaakso, etela_karjala, etela_savo, pohjois_karjala, keski_suomi, etela_pohjanmaa, pohjanmaa, keski_pohjanmaa, pohjois_pohjanmaa, kainuu. Oletus: valtion viranomaiset ilman hyvinvointialueita; kaikki = myös hyvinvointialueet. Useita pilkulla erotettuna." },
         hakusana: { type: "string", description: "Sana otsikosta tai tiivistelmästä, esim. \"kosmet\" tai \"arvonlisävero\". Valinnainen." },
         alkaen: { type: "string", description: "Tiedotteet alkaen (vvvv-kk-pp). Valinnainen." },
         enintaan: { type: "integer", description: "Montako näytetään (oletus 20, enintään 60)." },
@@ -374,11 +374,11 @@ export const TOOLS = [
   {
     name: "viranomaistiedote",
     description:
-      "Palauttaa Verohallinnon, Lupa- ja valvontaviraston, tietosuojavaltuutetun, Kyberturvallisuuskeskuksen tai KKV:n tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen.",
+      "Palauttaa Verohallinnon, Lupa- ja valvontaviraston, tietosuojavaltuutetun, Kyberturvallisuuskeskuksen, KKV:n tai hyvinvointialueen tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen.",
     inputSchema: {
       type: "object",
       properties: {
-        osoite: { type: "string", description: "Osoite (vero.fi, sttinfo.fi, tietosuoja.fi, kyberturvallisuuskeskus.fi tai kkv.fi), esim. hae_vero_ohjeita- tai viranomaistiedotteet-työkalun tuloksesta." },
+        osoite: { type: "string", description: "Osoite (vero.fi, sttinfo.fi, tietosuoja.fi, kyberturvallisuuskeskus.fi, kkv.fi tai hyvinvointialueen sivusto), esim. hae_vero_ohjeita- tai viranomaistiedotteet-työkalun tuloksesta." },
         luku: { type: "string", description: "Vero-ohjeen luku numerolla (\"3.7.3\", \"3.9\") tai otsikon sanalla (\"Poistot\"). Luku palautetaan alalukuineen. Valinnainen." },
         hakusana: { type: "string", description: "Sana tai sanonta, jota etsitään vero-ohjeen tekstistä; palauttaa luvut, joissa se esiintyy, otteineen. Käytä sanan vartaloa (esim. \"remont\"). Valinnainen." },
       },
@@ -1862,10 +1862,37 @@ async function kirjallinenKysymys(args) {
 const TIEDOTE_MAX = 60;
 const TIEDOTE_TEXT_MAX = 15_000;
 
+const FEED_ALIASES = {
+  hva: "hyvinvointialueet", hyvinvointialue: "hyvinvointialueet", varha: "varsinais_suomi", pohde: "pohjois_pohjanmaa", keusote: "keski_uusimaa",
+  oma_hame: "kanta_hame", siun_sote: "pohjois_karjala", siunsote: "pohjois_karjala", soite: "keski_pohjanmaa", eloisa: "etela_savo",
+  ekhva: "etela_karjala", hyvaep: "etela_pohjanmaa", helsingin_sote: "helsinki", vakehyva: "vantaa_kerava", hus_yhtyma: "hus",
+};
+const normFeedKey = (s) => s.trim().toLowerCase().replace(/[äå]/g, "a").replace(/ö/g, "o").replace(/[-\s]+/g, "_");
+
+/** viranomainen-parametrin syötteet. Oletus: valtion viranomaiset; hyvinvointialueet ja kaikki erikseen. */
+function feedKeys(arg) {
+  const national = Object.keys(FEEDS).filter((k) => !FEEDS[k].hva);
+  const hva = Object.keys(FEEDS).filter((k) => FEEDS[k].hva);
+  const raw = String(arg ?? "").trim();
+  if (!raw) return national;
+  const parts = raw.split(",").flatMap((p) => {
+    const k = normFeedKey(p);
+    return FEEDS[k] || FEED_ALIASES[k] || ["kaikki", "hyvinvointialueet"].includes(k) ? [k] : p.trim().split(/\s+/).map(normFeedKey);
+  });
+  const keys = [];
+  for (const p of parts.filter(Boolean)) {
+    const k = FEED_ALIASES[p] ?? p;
+    if (k === "kaikki") keys.push(...national, ...hva);
+    else if (k === "hyvinvointialueet") keys.push(...hva);
+    else if (/^(pohjois_savo|lappi|lapin_hyvinvointialue|pohjois_savon_hyvinvointialue)$/.test(k)) throw new UserError(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}. Katso tiedotteet alueen omilta sivuilta.`);
+    else if (FEEDS[k]) keys.push(k);
+    else throw new UserError(`viranomainen: ${national.join(", ")}, hyvinvointialueet, ${hva.join(", ")} tai kaikki.`);
+  }
+  return [...new Set(keys)];
+}
+
 async function viranomaistiedotteet(args) {
-  const want = String(args.viranomainen ?? "kaikki").trim().toLowerCase();
-  const keys = want === "kaikki" ? Object.keys(FEEDS) : want.split(/[,\s]+/).filter(Boolean);
-  for (const k of keys) if (!FEEDS[k]) throw new UserError(`viranomainen: ${Object.keys(FEEDS).join(", ")} tai kaikki.`);
+  const keys = feedKeys(args.viranomainen);
   const from = args.alkaen ? asIsoDate(args.alkaen, "alkaen") : null;
   const q = String(args.hakusana ?? "").trim().toLowerCase();
   const max = Math.min(TIEDOTE_MAX, Math.max(1, Number.parseInt(args.enintaan, 10) || 20));
@@ -1896,8 +1923,13 @@ async function viranomaistiedotteet(args) {
   out.push(
     "",
     "Tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite); Fimean ja Tukesin tiedotteet luetaan viraston sivulta. Kaikki syventävät vero-ohjeet löytyvät hae_vero_ohjeita-työkalulla ja muiden viranomaisten ohjeet hae_viranomaisohjeita-työkalulla.",
-    "Lähteet: Fimea, Tukes, Verohallinto, tietosuojavaltuutettu, Kyberturvallisuuskeskus ja KKV (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).",
   );
+  const hvaKeys = keys.filter((k) => FEEDS[k].hva);
+  if (keys.length > hvaKeys.length) out.push("Lähteet: Fimea, Tukes, Verohallinto, tietosuojavaltuutettu, Kyberturvallisuuskeskus ja KKV (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).");
+  if (hvaKeys.length) {
+    out.push(`Lähteet, hyvinvointialueet: ${hvaKeys.map((k) => `${FEEDS[k].name} (${FEEDS[k].url.includes("sttinfo.fi") ? "STT Info" : new URL(FEEDS[k].url).hostname})`).join("; ")}.`);
+    if (hvaKeys.length > 1) out.push(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}.`);
+  }
   return clip(out.join("\n"));
 }
 
@@ -1921,10 +1953,10 @@ async function viranomaistiedote(args) {
   }
   if (args.luku || args.hakusana) throw new UserError("luku ja hakusana toimivat vain Verohallinnon syventäville vero-ohjeille (ja päätöksille, kannanotoille ja ennakkoratkaisuille), joissa on numeroidut luvut.");
   const t = await itemText(url);
-  if (!t) throw new UserError("Tekstin haku onnistuu vain Verohallinnon (vero.fi) ja LVV:n (sttinfo.fi) tiedotteille. Tarkista osoite.");
+  if (!t) throw new UserError("Tekstin haku onnistuu vain Verohallinnon (vero.fi), STT Infon (sttinfo.fi: LVV, hyvinvointialueet) ja hyvinvointialueiden omien sivustojen tiedotteille. Tarkista osoite.");
   let text = t.text;
   if (text.length > TIEDOTE_TEXT_MAX) text = `${text.slice(0, TIEDOTE_TEXT_MAX)}\n… (katkaistu; koko teksti lähteessä)`;
-  const src = host.endsWith("vero.fi") ? "Verohallinto" : "Lupa- ja valvontavirasto, STT Info";
+  const src = host.endsWith("vero.fi") ? "Verohallinto" : host.endsWith("sttinfo.fi") ? `${t.source ?? "Lupa- ja valvontavirasto"}, STT Info` : t.source;
   return [t.title, t.date, "", text, "", `Lähde: ${url} (${src})`].filter((l, i) => l || i > 1).join("\n");
 }
 
@@ -1983,16 +2015,8 @@ function veroGuideOut(g, args) {
     if (!q) throw new UserError("Anna hakusana.");
     const hits = [];
     const scan = (label, text) => {
-      const low = text.toLowerCase();
-      const pos = [];
-      for (let p = low.indexOf(q); p >= 0 && pos.length < 50; p = low.indexOf(q, p + q.length)) pos.push(p);
-      if (!pos.length) return;
-      const ex = pos.slice(0, 2).map((p) => {
-        const a = Math.max(0, p - 160);
-        const b = Math.min(text.length, p + q.length + 160);
-        return `${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`;
-      });
-      hits.push({ label, n: pos.length, ex });
+      const r = excerpts(text, q);
+      if (r.n) hits.push({ label, ...r });
     };
     scan("Johdanto ja muutokset", g.intro);
     for (const x of g.sections) scan(secLabel(x), `${x.title}\n${x.text}`);
@@ -2118,18 +2142,25 @@ function ohjeHead(d) {
   return out;
 }
 
+/**
+ * Hakusanan osumat ja enintään n otetta (160 merkkiä kummallekin puolelle). Osumaa ei näytetä
+ * omana otteenaan, jos se on jo edellisen näytetyn otteen sisällä.
+ */
 function excerpts(text, q, n = 2) {
   const low = text.toLowerCase();
   const pos = [];
   for (let p = low.indexOf(q); p >= 0 && pos.length < 50; p = low.indexOf(q, p + q.length)) pos.push(p);
-  return {
-    n: pos.length,
-    ex: pos.slice(0, n).map((p) => {
-      const a = Math.max(0, p - 160);
-      const b = Math.min(text.length, p + q.length + 160);
-      return `${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`;
-    }),
-  };
+  const ex = [];
+  let shownEnd = -1;
+  for (const p of pos) {
+    if (ex.length >= n) break;
+    if (p + q.length <= shownEnd) continue;
+    const a = Math.max(0, p - 160);
+    const b = Math.min(text.length, p + q.length + 160);
+    shownEnd = b;
+    ex.push(`${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`);
+  }
+  return { n: pos.length, ex };
 }
 
 function findChapter(sections, luku) {
@@ -2455,16 +2486,8 @@ function kilaHits(intro, sections, q) {
   const needle = q.toLowerCase();
   const hits = [];
   const scan = (label, text) => {
-    const low = text.toLowerCase();
-    const pos = [];
-    for (let p = low.indexOf(needle); p >= 0 && pos.length < 50; p = low.indexOf(needle, p + needle.length)) pos.push(p);
-    if (!pos.length) return;
-    const ex = pos.slice(0, 2).map((p) => {
-      const a = Math.max(0, p - 160);
-      const b = Math.min(text.length, p + needle.length + 160);
-      return `${a > 0 ? "…" : ""}${text.slice(a, b).replace(/\s+/g, " ")}${b < text.length ? "…" : ""}`;
-    });
-    hits.push({ label, n: pos.length, ex });
+    const r = excerpts(text, needle);
+    if (r.n) hits.push({ label, ...r });
   };
   if (intro) scan("Alku", intro);
   for (const x of sections) scan(secLabel(x), `${x.title}\n${x.text}`);
@@ -3458,4 +3481,4 @@ export async function callTool(name, args = {}) {
   }
 }
 
-export { futureWarning };
+export { futureWarning, excerpts };

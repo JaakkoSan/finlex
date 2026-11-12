@@ -2,7 +2,9 @@
 // Ajo: node test/smoke.mjs   (vaatii Node 20+)
 
 import worker from "../src/index.js";
+import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
+import { HVA_FEEDS, feedItems } from "../src/tiedotteet.js";
 
 const env = {};
 let id = 0;
@@ -122,6 +124,50 @@ for (const [name, args, pred] of cases) {
   const r = await tool(name, args);
   check(pred(r.text), `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
   if (show || !pred(r.text)) console.log(r.text.slice(0, 2500), "\n------");
+}
+
+// Hakusanan otteet: lähekkäiset osumat eivät toista samaa otetta.
+{
+  const near = `${"a".repeat(300)} poisto ja poisto ${"b".repeat(300)} ${"c".repeat(400)} poisto ${"d".repeat(300)}`;
+  const r = excerpts(near, "poisto");
+  check(r.n === 3 && r.ex.length === 2 && r.ex[1].includes("c") && !r.ex[1].includes("ja poisto"), "excerpts: osuma edellisen otteen sisällä ohitetaan (3 osumaa, 2 eri otetta)");
+  const one = excerpts(`${"x".repeat(50)} sana sana sana ${"y".repeat(50)}`, "sana");
+  check(one.n === 3 && one.ex.length === 1, "excerpts: kaikki osumat samassa otteessa, yksi ote");
+  const t = (await tool("viranomaistiedote", { osoite: "https://www.vero.fi/syventavat-vero-ohjeet/ohje-hakusivu/49336/vuokratulojen-verotus8/", hakusana: "poisto" })).text;
+  const lines = t.split("\n").filter((l) => l.startsWith("  …") || l.startsWith("  "));
+  const dup = t.split("\n\n").some((blk) => { const ex = blk.split("\n").slice(1); return new Set(ex).size < ex.length; });
+  check(t.includes("osumaa") && lines.length > 0 && !dup, "viranomaistiedote vero-ohje hakusana: ei samaa otetta kahdesti luvussa");
+}
+
+// Hyvinvointialueet: kaikki 21 syötettä, tunnukset ja aliakset sekä tiedotteen teksti jokaiselta omalta sivustolta ja STT Infosta.
+{
+  const t0 = Date.now();
+  const r = await tool("viranomaistiedotteet", { viranomainen: "hyvinvointialueet", enintaan: 60 });
+  const shorts = Object.values(HVA_FEEDS).map((f) => f.short);
+  const missing = shorts.filter((s) => !r.text.includes(`${s} `));
+  check(!r.isError && !missing.length && !r.text.includes("HUOM") && r.text.includes("puuttuvat Pohjois-Savo") && r.text.includes("Lähteet, hyvinvointialueet:") && !r.text.includes("· Fimea ·"), `viranomaistiedotteet hyvinvointialueet: kaikki ${shorts.length} syötettä (${Date.now() - t0} ms)`);
+  if (show || missing.length) console.log("Puuttuvat:", missing, r.text.slice(0, 2500), "\n------");
+}
+{
+  const r = await tool("viranomaistiedotteet", { viranomainen: "Etelä-Savo, varha, hus" });
+  check(!r.isError && r.text.includes("HVA Etelä-Savo ") && r.text.includes("HVA Varsinais-Suomi ") && r.text.includes("HUS ") && !r.text.includes("HVA Kainuu"), "viranomaistiedotteet: alueen nimi ja aliakset (Etelä-Savo, varha, hus)");
+  const l = await tool("viranomaistiedotteet", { viranomainen: "lappi" });
+  check(l.isError && l.text.includes("Lappi"), "viranomaistiedotteet: Lappi kerrotaan puuttuvaksi");
+  const v = await tool("viranomaistiedotteet", { viranomainen: "ei_ole" });
+  check(v.isError && v.text.includes("hyvinvointialueet"), "viranomaistiedotteet: tuntematon tunnus hylätään");
+  const k = await tool("viranomaistiedotteet", { viranomainen: "kaikki", enintaan: 5 });
+  check(!k.isError && k.text.includes("Fimea ") && k.text.includes("HVA Kainuu "), "viranomaistiedotteet kaikki: valtion viranomaiset ja hyvinvointialueet");
+}
+for (const key of [...Object.keys(HVA_FEEDS).filter((k) => HVA_FEEDS[k].page), "hus", "pirkanmaa"]) {
+  const items = await feedItems(key);
+  const it = items.find((i) => i.date) ?? items[0];
+  const t0 = Date.now();
+  const r = await tool("viranomaistiedote", { osoite: it.link });
+  const name = HVA_FEEDS[key].page ? HVA_FEEDS[key].name : "STT Info";
+  const body = r.text.split("\nLähde:")[0];
+  const ok = !r.isError && r.text.includes(`Lähde: ${it.link} (`) && r.text.includes(name) && body.length > 300 && !/Jaa tämä sivu|Lisää tiedot|-->/.test(body);
+  check(ok, `viranomaistiedote ${key}: ${it.title.slice(0, 60)} (${body.length} merkkiä, ${Date.now() - t0} ms)`);
+  if (show || !ok) console.log(r.text.slice(0, 1500), "\n...\n", r.text.slice(-600), "\n------");
 }
 
 // Kirjanpitolautakunta: oikea sivusto, robots.txt:n Crawl-delay 5 s, joten tapausten välillä tauko.
