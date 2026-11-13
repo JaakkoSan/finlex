@@ -3526,7 +3526,7 @@ async function haeKrilRatkaisuja(args) {
   const out = [`Kuluttajariitalautakunnan ratkaisut (${crit}): ${r.total} osumaa${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
   if (!r.items.length) out.push(r.outOfRange || (r.total && page > r.pages) ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa, toista sanaa tai teemaa.");
   for (const h of r.items) out.push("", `${fmtDate(h.date) ?? "?"} · ${h.themes.join(", ") || "ei teemaa"} · ${h.title}`, `  tunnus: ${h.slug}`);
-  if (r.pages > page && r.items.length) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  if (r.pages > page) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
   out.push("", "Lue ratkaisu kril_ratkaisu-työkalulla (tunnus; osa, hakusana).", "Ratkaisu on lautakunnan suositus yksittäisessä tapauksessa, ei sitova.", src);
   return clip(out.join("\n"));
 }
@@ -3659,12 +3659,14 @@ async function haeMenLausuntoja(args) {
   }
   const r = await menSearch({ query, decisionIds, iccIds, mediaIds, yearIds, page, tax });
   const label = [query && `"${query}"`, ...crit].filter(Boolean).join(", ");
-  const removed = r.removed.signature + r.removed.other;
-  const out = [`Mainonnan eettisen neuvoston lausunnot (${label}): ${r.total} osumaa${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
-  if (r.filtered && r.total) {
-    out.push(`Osumamäärä on kauppakamari.fi:n haun luku ennen suodatusta (arvio). Haku osuu myös lausuntojen lopun jäsenluetteloon, joten liitin näyttää vain lausunnot, joissa hakusana on otsikossa tai lausunnon tekstissä; sivulla on siksi enintään ${MEN_PAGE_SIZE} tulosta.`);
-    if (r.removed.signature) out.push(`Tältä sivulta ${r.removed.signature} osumaa suodatettiin pois, koska hakusana oli vain jäsenluettelossa.`);
-    if (r.removed.other) out.push(`Tältä sivulta ${r.removed.other} osumaa suodatettiin pois, koska hakusana ei näkynyt lausunnon tekstissä.`);
+  const removed = r.removed.signature;
+  const osumaa = (n) => `${n} ${n === 1 ? "osuma" : "osumaa"}`;
+  const out = [`Mainonnan eettisen neuvoston lausunnot (${label}): ${osumaa(r.total)}${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
+  if (removed) {
+    out.push(
+      `Tältä sivulta ${osumaa(removed)} suodatettiin pois, koska hakusana oli vain jäsenluettelossa.`,
+      `Osumamäärä on kauppakamari.fi:n haun luku ennen suodatusta (arvio). Haku osuu myös lausuntojen lopun jäsenluetteloon, joten liitin näyttää vain lausunnot, joissa hakusana on otsikossa tai lausunnon tekstissä; sivulla on siksi enintään ${MEN_PAGE_SIZE} tulosta.`,
+    );
   }
   if (!r.items.length) {
     if (removed && r.pages > page) out.push(`Tälle sivulle ei jäänyt osumia suodatuksen jälkeen. Katso seuraava sivu: sivu ${page + 1}.`);
@@ -3715,7 +3717,8 @@ async function menLausunto(args) {
     if (q.length > MEN_QUERY_MAX) throw new UserError(`hakusana: enintään ${MEN_QUERY_MAX} merkkiä.`);
     // Pääjohdon teksti sisältää alalohkot, joten haetaan alimmilta tasoilta (ei kahteen kertaan).
     const parents = new Set(d.sections.filter((x) => x.level === 2).map((x) => x.parent));
-    const parts = d.sections.filter((x) => x.level === 2 || !parents.has(x.title));
+    // Pääjohdosta, jolla on alalohkoja, haetaan vain sen oma teksti ennen ensimmäistä alalohkoa.
+    const parts = d.sections.flatMap((x) => (x.level === 2 || !parents.has(x.title) ? [x] : x.intro ? [{ title: x.title, text: x.intro }] : []));
     const hits = [];
     for (const x of parts) {
       const e = excerpts(x.text, q.toLowerCase());
