@@ -35,6 +35,7 @@ import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSect
 import { FEEDS, HVA_MISSING, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
 import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, guideList, docPage, findByNumber, guideText, attachmentText, splitGuidePdfs, isExemption } from "./kila.js";
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
+import { MenError, MEN_SEARCH_PAGE, menTaxonomies, menTotal, matchArticles, matchDecision, matchMedia, shortArticle, searchStatements as menSearch, parseMenId, slugByNumber, statementBySlug, overviewSection, findSection } from "./men.js";
 import { KrilError, KRIL_BASE, KRIL_PAGE_SIZE, krilThemes, matchTheme, searchDecisions, krilSlug, decisionBySlug, OVERVIEW as KRIL_OVERVIEW } from "./kril.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
@@ -467,6 +468,38 @@ export const TOOLS = [
     },
   },
   {
+    name: "hae_men_lausuntoja",
+    description:
+      "Hakee Mainonnan eettisen neuvoston (MEN, Keskuskauppakamari) lausuntoja (noin 900 kpl, 2001 alkaen) kauppakamari.fi:stä: hakusana (otsikko ja teksti), ratkaisu (huomautus, vapauttava, ei toimivaltaa), ICC:n markkinointisääntöjen artikla, media ja lausunnon vuodet. Palauttaa numeron ja markkinoijan, julkaisupäivän, ratkaisun, artiklat, tiivistelmän ja tunnuksen, 10 kerrallaan uusimmasta alkaen. Lue lausunto men_lausunto-työkalulla. Ilman parametreja palauttaa ratkaisujen, artiklojen ja medioiden määrät.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana tai sanat, esim. \"vaikuttaja\", \"alkoholi\", \"ilmainen\". Haku kohdistuu otsikkoon ja tekstiin. Valinnainen." },
+        ratkaisu: { type: "string", enum: ["huomautus", "vapauttava", "ei toimivaltaa"], description: "Lausunnon ratkaisu. Valinnainen." },
+        artikla: { type: "string", description: "ICC:n markkinointisääntöjen artiklan numero tai nimen osa, esim. \"7\", \"C2\", \"vaikuttaja\", \"lapset\". Osuu sekä vanhoihin että uusiin sääntöihin; useita pilkulla (TAI). Valinnainen." },
+        media: { type: "string", description: "Media, esim. \"sovellus\" (sosiaalinen media ja sovellukset), \"internet\", \"tv\", \"radio\", \"lehti\", \"ulkomainos\", \"suoramarkkinointi\", \"tuotepakkaus\". Valinnainen." },
+        vuosi: { type: "integer", description: "Lausunnon vuosi. Valinnainen." },
+        alkaen_vuosi: { type: "integer", description: "Lausunto aikaisintaan tältä vuodelta. Valinnainen." },
+        paattyen_vuosi: { type: "integer", description: "Lausunto viimeistään tältä vuodelta. Valinnainen." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla 10 tulosta." },
+      },
+    },
+  },
+  {
+    name: "men_lausunto",
+    description:
+      "Palauttaa lainauksen Mainonnan eettisen neuvoston lausunnosta kauppakamari.fi:stä numerolla (esim. \"MEN 43/2026\"), tunnuksella tai osoitteella. Oletuksena yleiskuva: tiivistelmä, tietorivit (asiasanat, artiklat, markkinoija, media, päätös), lohkojen luettelo ja asian arviointi. Parametrilla lohko yksi lohko (esim. \"lausuntopyyntö\", \"markkinointi\", \"markkinoijan vastaus\", \"arviointi\"), enintään noin 4 000 merkkiä; parametrilla hakusana osumat otteineen. Koko teksti on lähteen sivulla.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tunnus: { type: "string", description: "Lausunnon numero (\"MEN 43/2026\", \"MEN lausunto 1/2001\" tai \"43/2026\"), tunnus hae_men_lausuntoja-työkalun tuloksesta (esim. \"men-43-2026-soluni-oy\") tai osoite https://kauppakamari.fi/men-..." },
+        lohko: { type: "string", description: "Lohkon otsikko tai sen osa (esim. \"lausuntopyyntö\", \"markkinointi\", \"vastaus\", \"arviointi\", \"neuvoston lausunto\"). Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanonta, jota etsitään tekstistä; käytä sanan vartaloa (esim. \"mainostunnist\"). Valinnainen." },
+      },
+      required: ["tunnus"],
+    },
+  },
+  {
     name: "hae_viranomaisohjeita",
     description:
       "Hakee viranomaisten ohjeita ja linjauksia niiden verkkosivuilta: Traficom (Kyberturvallisuuskeskus: evästeet, sähköisen viestinnän tietoturva ja luottamuksellisuus, sähköinen tunnistaminen ja luottamuspalvelut, kyberturvallisuusohjeet ja -oppaat), tietosuojavaltuutettu (tietosuoja.fi:n ohjeet, esim. käsittelyperusteet, rekisteröidyn oikeudet, kameravalvonta, työelämä), KKV (kuluttaja-asiamiehen linjaukset ja ohjeistukset, kuluttaja-asioiden ohjeet, päätökset) ja PRH (kaupparekisteri, yhdistykset, säätiöt, tavaramerkit, patentit). Haku kohdistuu otsikkoon ja osoitteeseen (KKV:ssa sivujen otsikoihin WordPressin hakurajapinnalla ja päätöksissä osoitteeseen; KKV:n päätöksen voi hakea myös diaarinumerolla). Palauttaa otsikon ja osoitteen; lue ohje viranomaisohje-työkalulla.",
@@ -585,6 +618,8 @@ const TITLES = {
   kila_lausunto: "Kirjanpitolautakunnan lausunto tai yleisohje",
   hae_kril_ratkaisuja: "Hae Kuluttajariitalautakunnan ratkaisuja",
   kril_ratkaisu: "Kuluttajariitalautakunnan ratkaisu",
+  hae_men_lausuntoja: "Hae Mainonnan eettisen neuvoston lausuntoja",
+  men_lausunto: "Mainonnan eettisen neuvoston lausunto",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -3542,6 +3577,167 @@ async function krilRatkaisu(args) {
   return clip([...out, ...tail].join("\n"));
 }
 
+// ---------- Mainonnan eettinen neuvosto (MEN) ----------
+
+const MEN_SRC = "Mainonnan eettinen neuvosto, Keskuskauppakamari";
+const MEN_BLOCK_MAX = 4000;
+const MEN_NOTE =
+  "Mainonnan eettisen neuvoston lausunto on itsesääntelyelimen suositusluonteinen kannanotto siitä, onko markkinointi hyvän tavan vastaista tai tunnistettavissa markkinoinniksi ICC:n markkinointisääntöjen mukaan. Se ei ole sitova eikä viranomaispäätös, eikä neuvosto ota kantaa lainvastaisuuteen. Markkinointia arvioidaan myös kuluttajansuojalain ja muun lainsäädännön mukaan; lainmukaisuuden arvioivat KKV ja tuomioistuimet (esim. kuluttajansuojalaki 38/1978 2 luku, hae_pykala).";
+
+function menYearRange(args) {
+  let from = args.alkaen_vuosi ? asYear(args.alkaen_vuosi) : undefined;
+  let to = args.paattyen_vuosi ? asYear(args.paattyen_vuosi) : undefined;
+  if (args.vuosi) from = to = asYear(args.vuosi);
+  if (from && to && from > to) throw new UserError("alkaen_vuosi on myöhempi kuin paattyen_vuosi.");
+  return { from, to };
+}
+
+function menCut(text, link) {
+  if (text.length <= MEN_BLOCK_MAX) return text;
+  const at = text.lastIndexOf(" ", MEN_BLOCK_MAX);
+  return `${text.slice(0, at > MEN_BLOCK_MAX - 200 ? at : MEN_BLOCK_MAX)} …\n(Lohko katkaistu noin 4 000 merkkiin. Koko teksti: ${link})`;
+}
+
+async function haeMenLausuntoja(args) {
+  const query = String(args.hakusana ?? "").trim();
+  const page = args.sivu === undefined ? 1 : Number(args.sivu);
+  if (!Number.isInteger(page) || page < 1 || page > 100) throw new UserError("sivu: 1–100.");
+  const { from, to } = menYearRange(args);
+  const tax = await menTaxonomies({ years: true });
+  const src = `Lähde: ${MEN_SEARCH_PAGE} (${MEN_SRC})`;
+  const crit = [];
+  let decisionIds, iccIds, mediaIds, yearIds;
+  if (args.ratkaisu !== undefined && String(args.ratkaisu).trim()) {
+    const m = matchDecision(tax.decisions, args.ratkaisu);
+    if (!m.length) throw new UserError(`Ratkaisua "${args.ratkaisu}" ei löytynyt. Vaihtoehdot: huomautus, vapauttava, ei toimivaltaa.`);
+    decisionIds = m.map((t) => t.id);
+    crit.push(`ratkaisu ${[...new Set(m.map((t) => t.name))].join(" tai ")}`);
+  }
+  if (args.artikla !== undefined && String(args.artikla).trim()) {
+    const m = matchArticles(tax.icc, args.artikla);
+    if (!m.length) {
+      const list = tax.icc.filter((t) => t.count > 0).sort((a, b) => b.count - a.count).map((t) => `- ${t.name} (${t.count})`);
+      throw new UserError(`Artiklaa "${args.artikla}" ei löytynyt. Artiklat, joihin on lausuntoja:\n${list.join("\n")}`);
+    }
+    iccIds = m.map((t) => t.id);
+    crit.push(`artikla ${[...new Set(m.map((t) => shortArticle(t.name)))].join(" tai ")}`);
+  }
+  if (args.media !== undefined && String(args.media).trim()) {
+    const m = matchMedia(tax.media, args.media);
+    if (!m.length) throw new UserError(`Mediaa "${args.media}" ei löytynyt. Mediat: ${[...new Set(tax.media.map((t) => t.name))].join(", ")}.`);
+    mediaIds = m.map((t) => t.id);
+    crit.push(`media ${[...new Set(m.map((t) => t.name))].join(" tai ")}`);
+  }
+  if (from || to) {
+    const ys = tax.years.filter((t) => (!from || +t.name >= from) && (!to || +t.name <= to));
+    const lbl = from && to && from === to ? `vuosi ${from}` : [from && `alkaen ${from}`, to && `päättyen ${to}`].filter(Boolean).join(" ");
+    if (!ys.length) {
+      const all = tax.years.map((t) => +t.name).sort((a, b) => a - b);
+      throw new UserError(`Lausuntoja ei ole (${lbl}). Vuodet ${all[0]}–${all[all.length - 1]}.`);
+    }
+    yearIds = ys.map((t) => t.id);
+    crit.push(lbl);
+  }
+  if (!query && !crit.length) {
+    const total = await menTotal();
+    const sum = (arr) => {
+      const m = new Map();
+      for (const t of arr) m.set(t.name, (m.get(t.name) ?? 0) + t.count);
+      return [...m].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+    };
+    const yrs = tax.years.map((t) => +t.name).sort((a, b) => a - b);
+    const out = [`Mainonnan eettisen neuvoston lausunnot: ${total} kpl, vuodet ${yrs[0]}–${yrs[yrs.length - 1]}.`, "", "Ratkaisut:"];
+    for (const [n, c] of sum(tax.decisions)) out.push(`- ${n}: ${c}`);
+    out.push("", "Yleisimmät ICC-artiklat (vanhat ja uudet säännöt; sama aihe voi olla eri numerolla):");
+    for (const t of tax.icc.filter((t) => t.count > 0).sort((a, b) => b.count - a.count).slice(0, 14)) out.push(`- ${t.name}: ${t.count}`);
+    out.push("", "Mediat:");
+    for (const [n, c] of sum(tax.media)) out.push(`- ${n}: ${c}`);
+    out.push("", "Hae lausuntoja hakusanalla, ratkaisulla, artiklalla, medialla tai vuosilla. Kaikkia lausuntoja ei ole luokiteltu, joten hakusana kattaa enemmän.", src);
+    return out.join("\n");
+  }
+  const r = await menSearch({ query, decisionIds, iccIds, mediaIds, yearIds, page, tax });
+  const label = [query && `"${query}"`, ...crit].filter(Boolean).join(", ");
+  const out = [`Mainonnan eettisen neuvoston lausunnot (${label}): ${r.total} osumaa${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
+  if (!r.items.length) out.push(r.outOfRange || (r.total && page > r.pages) ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa, toista sanaa tai väljempiä rajauksia.");
+  for (const h of r.items) {
+    out.push("", h.title, `  julkaistu ${fmtDate(h.date) ?? "?"} · ${h.decisions.join(", ") || "ratkaisu ei luokiteltu"}${h.media.length ? ` · media ${h.media.join(", ")}` : ""}`);
+    if (h.articles.length) out.push(`  artiklat: ${h.articles.map(shortArticle).join(" | ")}`);
+    if (h.summary) out.push(`  tiivistelmä: ${h.summary.length > 400 ? `${h.summary.slice(0, 400).replace(/\s+\S*$/, "")} …` : h.summary}`);
+    out.push(`  tunnus: ${h.slug}`);
+  }
+  if (r.pages > page) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  out.push("", "Lue lausunto men_lausunto-työkalulla (tunnus tai numero; lohko, hakusana).", "Lausunto on itsesääntelyelimen suositusluonteinen kannanotto, ei sitova eikä viranomaispäätös.", src);
+  return clip(out.join("\n"));
+}
+
+async function menLausunto(args) {
+  const id = parseMenId(args.tunnus);
+  if (!id) throw new UserError("Anna lausunnon numero (esim. \"MEN 43/2026\"), tunnus hae_men_lausuntoja-työkalun tuloksesta (esim. \"men-43-2026-soluni-oy\") tai osoite https://kauppakamari.fi/men-...");
+  const label = id.slug ?? `MEN ${id.num}/${id.year}`;
+  const slug = id.slug ?? (await slugByNumber(id.num, id.year));
+  const d = slug ? await statementBySlug(slug) : null;
+  if (!d) throw new UserError(`Lausuntoa "${label}" ei löytynyt. Hae se hae_men_lausuntoja-työkalulla.`);
+  const head = [
+    d.title,
+    `Mainonnan eettisen neuvoston lausunto, julkaistu ${fmtDate(d.date) ?? "?"}${d.years.length ? ` (lausuntovuosi ${d.years.join(", ")})` : ""}`,
+  ];
+  if (d.decisions.length) head.push(`Ratkaisu: ${d.decisions.join(", ")}`);
+  if (d.articles.length) head.push(`ICC-artiklat: ${d.articles.map(shortArticle).join(" | ")}`);
+  if (d.media.length) head.push(`Media (luokittelu): ${d.media.join(", ")}`);
+  if (d.summary) head.push(`Tiivistelmä: ${d.summary}`);
+  if (d.info.length) head.push("", "Tietorivit:", ...d.info.map((x) => `- ${x.label}: ${x.value}`));
+  const tocItems = d.sections.filter((x) => x.level === 1).map((x) => {
+    const subs = d.sections.filter((y) => y.level === 2 && y.parent === x.title).map((y) => y.title);
+    return subs.length ? `${x.title} (alalohkot: ${subs.join(", ")})` : x.title;
+  });
+  const toc = tocItems.length ? ["", `Lohkot: ${tocItems.join(" | ")}`] : [];
+  const tail = [
+    "",
+    MEN_NOTE,
+    `Liitin näyttää lausunnosta lainauksen (tiivistelmä, tietorivit ja yksi lohko enintään noin 4 000 merkkiä tai hakusanan otteet). Koko teksti on lähteen sivulla: ${d.link}`,
+    `Lähde: ${d.link} (${MEN_SRC})`,
+  ];
+
+  if (args.hakusana !== undefined && String(args.hakusana).trim()) {
+    const q = String(args.hakusana).trim();
+    // Pääjohdon teksti sisältää alalohkot, joten haetaan alimmilta tasoilta (ei kahteen kertaan).
+    const parents = new Set(d.sections.filter((x) => x.level === 2).map((x) => x.parent));
+    const parts = d.sections.filter((x) => x.level === 2 || !parents.has(x.title));
+    const hits = [];
+    for (const x of parts) {
+      const e = excerpts(x.text, q.toLowerCase());
+      if (e.n) hits.push({ label: x.title, ...e });
+    }
+    const out = [...head, ...toc, "", `Hakusana "${q}": ${hits.reduce((s, h) => s + h.n, 0)} osumaa ${hits.length} lohkossa.`];
+    let shown = 0;
+    for (const h of hits) {
+      if (shown >= 10) {
+        out.push("", "Loput otteet jätetty pois; tarkenna hakusanaa tai lue lohko.");
+        break;
+      }
+      out.push("", `${h.label} (${h.n})`);
+      for (const e of h.ex) out.push(`  ${e}`);
+      shown += h.ex.length;
+    }
+    if (!hits.length) out.push("Ei osumia. Haku on kirjaimellinen: kokeile sanan vartaloa.");
+    return clip([...out, ...tail].join("\n"));
+  }
+
+  const want = String(args.lohko ?? "").trim();
+  if (want) {
+    const x = findSection(d.sections, want);
+    if (!x) throw new UserError(`Lohkoa "${want}" ei löytynyt. ${toc[1] ?? "Lausunnossa ei ole otsikoituja lohkoja; lue teksti lähteen sivulta."}`);
+    const subs = d.sections.filter((s) => s.level === 2 && s.parent === x.title).map((s) => s.title);
+    const note = subs.length && x.text.length > MEN_BLOCK_MAX ? [`Alalohkot voi lukea erikseen: ${subs.join(", ")}.`] : [];
+    return clip([...head, ...toc, "", x.title, menCut(x.text, d.link), ...note, ...tail].join("\n"));
+  }
+  const ov = overviewSection(d.sections);
+  const out = [...head, ...toc];
+  if (ov) out.push("", ov.title, menCut(ov.text, d.link));
+  out.push("", "Muut lohkot (esim. lausuntopyyntö, markkinointi, markkinoijan vastaus): parametri lohko, yksi kerrallaan.");
+  return clip([...out, ...tail].join("\n"));
+}
+
 const HANDLERS = {
   hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
@@ -3573,6 +3769,8 @@ const HANDLERS = {
   kila_lausunto: kilaLausunto,
   hae_kril_ratkaisuja: haeKrilRatkaisuja,
   kril_ratkaisu: krilRatkaisu,
+  hae_men_lausuntoja: haeMenLausuntoja,
+  men_lausunto: menLausunto,
 };
 
 export async function callTool(name, args = {}) {
@@ -3591,6 +3789,8 @@ export async function callTool(name, args = {}) {
           ? `Kirjanpitolautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof KrilError
           ? `Kuluttajariitalautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof MenError
+          ? `Mainonnan eettisen neuvoston lausuntojen haku kauppakamari.fi:stä epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof OhjeUserError
           ? e.message
           : e instanceof OhjeError

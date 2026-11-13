@@ -5,6 +5,7 @@ import worker from "../src/index.js";
 import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
 import { HVA_FEEDS, feedItems } from "../src/tiedotteet.js";
+import { readFileSync } from "node:fs";
 
 const env = {};
 let id = 0;
@@ -33,7 +34,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 30, "tools/list (30 työkalua)");
+check(list.result?.tools?.length === 32, "tools/list (32 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -221,4 +222,46 @@ for (const [name, args, pred] of krilCases) {
   const ok = pred(r.text) && (r.isError === r.text.includes("ei löytynyt"));
   check(ok, `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
   if (show || !ok) console.log(r.text.slice(0, 2500), "\n------");
+}
+
+// Mainonnan eettinen neuvosto (kauppakamari.fi, WordPressin julkinen rajapinta). Lainausmuoto:
+// tiivistelmä, tietorivit ja yksi lohko enintään noin 4 000 merkkiä tai hakusanan otteet.
+const MEN_SRC = "(Mainonnan eettinen neuvosto, Keskuskauppakamari)";
+const menBlock = (t, title) => {
+  const i = t.indexOf(`\n\n${title}\n`);
+  const j = t.indexOf("\n(Lohko katkaistu", i);
+  return i >= 0 && j > i ? t.slice(i + title.length + 3, j) : null;
+};
+const menCases = [
+  ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("7 artikla - Markkinoinnin tunnistettavuus") && t.includes(MEN_SRC)],
+  ["hae_men_lausuntoja", { hakusana: "vaikuttaja" }, (t) => /: \d+ osumaa, sivu 1\/\d+/.test(t) && t.includes("tunnus: men-") && t.includes("tiivistelmä:") && t.includes("ei sitova eikä viranomaispäätös") && t.includes(MEN_SRC)],
+  ["hae_men_lausuntoja", { ratkaisu: "vapauttava", vuosi: 2026 }, (t) => t.includes("ratkaisu vapauttava, vuosi 2026") && t.includes("MEN 44/2026 Sinituote Oy") && !t.includes("· huomautus") && !/MEN \d+\/2025/.test(t)],
+  ["hae_men_lausuntoja", { ratkaisu: "ei toimivaltaa" }, (t) => t.includes("· ei toimivaltaa") && !t.includes("· vapauttava")],
+  ["hae_men_lausuntoja", { artikla: "C2", vuosi: 2026 }, (t) => t.includes("artikla C2 Markkinoinnin tunnistettavuus") && t.includes("C2 Markkinoinnin tunnistettavuus") && t.includes("MEN 43/2026")],
+  ["hae_men_lausuntoja", { artikla: "18", media: "sovellus", alkaen_vuosi: 2025 }, (t) => t.includes("18 Lapset ja nuoret tai 18 Todistus ja suositus") && t.includes("media sovellus")],
+  ["hae_men_lausuntoja", { artikla: "olematon" }, (t) => t.includes("ei löytynyt") && t.includes("7 artikla - Markkinoinnin tunnistettavuus")],
+  ["men_lausunto", { tunnus: "MEN 43/2026" }, (t) => t.startsWith("MEN 43/2026 Soluni Oy") && t.includes("Ratkaisu: huomautus") && t.includes("Tiivistelmä: Väkivaltaan viittaavia") && t.includes("- Markkinoija: Soluni Oy") && t.includes("- Päätös: Huomautus") && t.includes("- Asiasanat: PIILOMAINONTA") && t.includes("Lohkot: Lausuntopyyntö | Markkinointi") && t.includes("\nAsian arviointi\nMainonnan eettinen neuvosto toteaa") && !t.includes("Markkinoijan mukaan lapseen") && !t.includes("Paula Paloranta") && !t.includes("Asian käsittelyyn") && t.includes("ei ole sitova eikä viranomaispäätös") && t.includes("ota kantaa lainvastaisuuteen") && t.includes("kuluttajansuojalain") && t.includes("Koko teksti on lähteen sivulla: https://kauppakamari.fi/men-43-2026-soluni-oy/") && t.includes(`Lähde: https://kauppakamari.fi/men-43-2026-soluni-oy/ ${MEN_SRC}`)],
+  ["men_lausunto", { tunnus: "MEN lausunto 1/2001" }, (t) => t.startsWith("MEN lausunto 1/2001") && t.includes("- Mainostaja: Luottokunta, Helsinki") && t.includes("Mainonnan eettisen neuvoston lausunto\nMainonnan eettinen neuvosto toteaa") && !t.includes("Outi Antila") && t.includes("Lähde: https://kauppakamari.fi/men-lausunto-1-2001/")],
+  ["men_lausunto", { tunnus: "https://kauppakamari.fi/men-43-2026-soluni-oy/", lohko: "neuvoston lausunto" }, (t) => { const b = menBlock(t, "Mainonnan eettisen neuvoston lausunto"); return b && b.length <= 4002 && b.length > 3500 && t.includes("Koko teksti: https://kauppakamari.fi/men-43-2026-soluni-oy/") && t.includes("Alalohkot voi lukea erikseen") && !t.includes("Markkinoijan mukaan lapseen"); }],
+  ["men_lausunto", { tunnus: "men-43-2026-soluni-oy", lohko: "vastaus" }, (t) => t.includes("\nMarkkinoijan vastaus\nMarkkinoijan mukaan lapseen") && !t.includes("Lohko katkaistu") && !t.includes("Asian arviointi\nMainonnan eettinen")],
+  ["men_lausunto", { tunnus: "MEN 43/2026", hakusana: "mainostunnist" }, (t) => /Hakusana "mainostunnist": \d+ osumaa \d+ lohkossa/.test(t) && t.includes("Asian arviointi (") && t.includes("…") && !t.includes("Markkinoijan mukaan lapseen")],
+  ["men_lausunto", { tunnus: "MEN 999/2026" }, (t) => t.includes("ei löytynyt")],
+  ["men_lausunto", { tunnus: "men-ei-tallaista-lausuntoa-xyz" }, (t) => t.includes("ei löytynyt")],
+  ["men_lausunto", { tunnus: "jotain muuta" }, (t) => t.includes("Anna lausunnon numero")],
+];
+for (const [name, args, pred] of menCases) {
+  const t0 = Date.now();
+  const r = await tool(name, args);
+  const expectErr = r.text.includes("ei löytynyt") || r.text.startsWith("Anna lausunnon numero");
+  const ok = pred(r.text) && r.isError === expectErr;
+  check(ok, `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
+  if (show || !ok) console.log(r.text.slice(0, 2500), "\n------");
+}
+
+// Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
+{
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
+  const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
+  check(pkg === "1.15.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }
