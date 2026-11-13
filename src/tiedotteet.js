@@ -225,20 +225,42 @@ const fiDate = (iso) => {
   return m ? `${+m[3]}.${+m[2]}.${m[1]}` : "";
 };
 
-// Yhteyshenkilöiden nimet, puhelinnumerot ja sähköpostit jätetään pois (kuten STT Infon tiedotteista):
-// lopun "Lisätietoja"-osio poistetaan, jos siinä on puhelinnumero tai sähköpostiosoite. Viimeisen
-// yhteystietorivin jälkeiset rivit (esim. ilmoittautumisen määräpäivä) jätetään.
-const CONTACT_HEAD = /^(tarvittaessa\s+)?(lisätie[dt]\w*|yhteyshenkilö\w*|tiedustelut)(\s+(antaa|antavat|ja\s+\S+))?\s*:?\s*$/i;
-const CONTACT_INFO = /\b0\d{1,3}[\s-]?\d{3}[\s-]?\d{3,4}\b|\+358|@|\[email protected\]|\bp\.\s*\d/i;
-function dropContacts(text) {
+// Yhteyshenkilöiden nimet, puhelinnumerot ja sähköpostit jätetään pois (kuten STT Infon tiedotteista).
+// Jokainen Lisätietoja-osio käsitellään, myös tekstin keskellä. Otsikko on lyhyt rivi, joka alkaa
+// sanalla Lisätietoja, Lisätiedot, Lisätietoa, Yhteyshenkilöt, Yhteystiedot, Tiedustelut tai
+// Tarvittaessa lisätietoja, ja siinä voi olla täydennys ("Lisätietoja medialle:", "Lisätietoa voi kysyä
+// myös ryhmän ohjaajilta:") tai nimi samalla rivillä ("Lisätiedot: Nimi"). Otsikon jälkeen poistetaan
+// yhteystietorivit (puhelin, sähköposti) ja niitä edeltävät lyhyet nimi- ja tittelirivit (enintään 3).
+// Asiarivit (virkkeet, linkit ilman yhteystietoa) jäävät. Otsikko poistetaan vain, jos osiossa oli
+// yhteystieto. Organisaation palvelunumerot muualla tekstissä jäävät.
+const CONTACT_HEAD = /^(tarvittaessa\s+)?(lisätie|yhteyshenkilö|yhteystied|tiedustelu|haastattelupyyn)/i;
+const CONTACT_INFO = /\b0\d{1,3}(?:[\s-]?\d){5,8}\b|\+358|@|\(at\)|\[email protected\]|\bp\.\s*\d|\bpuh\.?\s*\d/i;
+const isContactHead = (l) => l.length <= 120 && CONTACT_HEAD.test(l) && !/[.!?]$/.test(l);
+// Nimi-, titteli- tai organisaatiorivi: lyhyt eikä virke.
+const isPersonLine = (l) => l.length <= 100 && !/[.!?]$/.test(l) && !/https?:\/\//.test(l);
+export function dropContacts(text) {
   const lines = text.split("\n");
-  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 12); i--) {
-    if (!CONTACT_HEAD.test(lines[i])) continue;
-    let last = -1;
-    for (let j = i + 1; j < lines.length; j++) if (CONTACT_INFO.test(lines[j])) last = j;
-    if (last > i) return [...lines.slice(0, i), ...lines.slice(last + 1)].join("\n");
+  const drop = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (!isContactHead(lines[i])) continue;
+    let pending = [];
+    let found = CONTACT_INFO.test(lines[i]);
+    let j = i + 1;
+    for (; j < lines.length; j++) {
+      const l = lines[j];
+      if (CONTACT_INFO.test(l)) {
+        for (const k of pending) drop.add(k);
+        pending = [];
+        drop.add(j);
+        found = true;
+      } else if (isPersonLine(l) && !isContactHead(l) && pending.length < 3) pending.push(j);
+      else break;
+    }
+    if (found) drop.add(i);
+    // Seuraava otsikko voi olla osion jälkeen jääneiden rivien joukossa.
+    i = found ? Math.max(i, (pending[0] ?? j) - 1) : i;
   }
-  return text;
+  return drop.size ? lines.filter((_, k) => !drop.has(k)).join("\n") : text;
 }
 
 /** Hyvinvointialueen oman sivuston tiedotesivu: { title, date, text } tai null. */
@@ -269,7 +291,7 @@ export async function itemText(url) {
   }
   const hva = u.protocol === "https:" ? hvaKeyOf(u) : null;
   if (u.protocol !== "https:" || (!TEXT_HOSTS.has(u.hostname) && !hva)) return null;
-  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_tiedote=2`;
+  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_tiedote=3`;
   const hit = await cacheGetJson(key);
   if (hit) return hit;
   const html = await get(u.href, 0);

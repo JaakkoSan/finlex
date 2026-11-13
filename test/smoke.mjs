@@ -4,7 +4,7 @@
 import worker from "../src/index.js";
 import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
-import { HVA_FEEDS, feedItems } from "../src/tiedotteet.js";
+import { HVA_FEEDS, feedItems, dropContacts } from "../src/tiedotteet.js";
 import { menCacheTtl, menSearchTerms, menQueryMatch, parseStatement } from "../src/men.js";
 import { readFileSync } from "node:fs";
 
@@ -160,6 +160,17 @@ for (const [name, args, pred] of cases) {
   const k = await tool("viranomaistiedotteet", { viranomainen: "kaikki", enintaan: 5 });
   check(!k.isError && k.text.includes("Fimea ") && k.text.includes("HVA Kainuu "), "viranomaistiedotteet kaikki: valtion viranomaiset ja hyvinvointialueet");
 }
+// Yhteystietojen poisto (dropContacts): keksityt nimet ja numerot sivustojen muodoissa.
+{
+  const ek = dropContacts(["Tiedotteen teksti.", "Lisätietoa", "Lisätietoa diabeteksesta löytyy Diabetesliiton verkkosivuilta.", "Lisätietoja medialle:", "Maija Meikäläinen, palveluesihenkilö, puh. 040 000 0000, [email protected] (Testilän hyvinvointiasema)", "Matti Mallikas, ylilääkäri, 040 0000 000, [email protected]", "Alla kirjastoissa näkyvä juliste"].join("\n"));
+  check(ek === ["Tiedotteen teksti.", "Lisätietoa", "Lisätietoa diabeteksesta löytyy Diabetesliiton verkkosivuilta.", "Alla kirjastoissa näkyvä juliste"].join("\n"), "dropContacts: Etelä-Karjalan Lisätietoja medialle -osio pois, asiarivit jäävät");
+  const ka = dropContacts(["Ryhmä kokoontuu keväällä.", "Lisätietoa voi kysyä myös ryhmän ohjaajilta:", "Testi Henkilö, perheohjaaja", "testi.henkilo@example.fi, 040 000 0000", "Tulostettava esite:", "Esite kevät 2027", "Puolanka - ke 2.12. klo 10-13", "Lisätiedot: Toinen Testaaja", "toinen.testaaja@example.fi", "Tilaisuudet ovat osa hanketta.", "Lisätiedot ja paikat: example.fi/rokotukset"].join("\n"));
+  check(ka === ["Ryhmä kokoontuu keväällä.", "Tulostettava esite:", "Esite kevät 2027", "Puolanka - ke 2.12. klo 10-13", "Tilaisuudet ovat osa hanketta.", "Lisätiedot ja paikat: example.fi/rokotukset"].join("\n"), "dropContacts: Kainuun otsikko täydennyksellä ja Lisätiedot: Nimi samalla rivillä");
+  const es = dropContacts(["Ensimmäinen asia.", "Lisätietoja", "Puheenjohtaja Testi Testinen, p. 050 000 0000, testi.testinen@example.fi", "Toinen asia", "Toisen asian teksti.", "Lisätietoja", "Pelastustoimen päätös:", "Toimialajohtaja Keksi Keksinen, p. 040 000 0000, keksi@example.fi", "——", "Lue koko esityslista täältä."].join("\n"));
+  check(es === ["Ensimmäinen asia.", "Toinen asia", "Toisen asian teksti.", "——", "Lue koko esityslista täältä."].join("\n"), "dropContacts: useita Lisätietoja-osioita keskellä tekstiä (Etelä-Savo)");
+  const keep = "Ajan voi varata numerosta 05 000 0000.\nLisätietoja hyvinvointiasemien palveluista voit lukea sivuilta.";
+  check(dropContacts(keep) === keep, "dropContacts: palvelunumero ja asiavirke ilman yhteystieto-osiota jäävät");
+}
 // Pohjois-Savo (lisätty 13.11.2026): Liferayn syöte, linkeistä redirect-parametri pois, tekstin rajaus
 // sivun pshva_topic-page-osiosta ja yhteystietojen poisto.
 {
@@ -180,7 +191,7 @@ for (const [name, args, pred] of cases) {
   );
   if (show) console.log(r.text.slice(0, 1200), "\n------");
   const k = await tool("viranomaistiedote", { osoite: "https://pshyvinvointialue.fi/fi/w/polulla-kotiin-hanke-on-kohdannut-jo-100-asunnotonta-kuopiossa" });
-  check(!k.isError && k.text.includes("Asunnottomien yö") && !/Lisätiedot:|@pshyvinvointialue|0447183442/.test(k.text), "viranomaistiedote Pohjois-Savo: Lisätiedot-osion yhteystiedot pois");
+  check(!k.isError && k.text.includes("Asunnottomien yö") && !/Lisätiedot:|@pshyvinvointialue|\b0\d{2}\s?\d{3}\s?\d{3,4}\b/.test(k.text), "viranomaistiedote Pohjois-Savo: Lisätiedot-osion yhteystiedot pois");
   const t = await tool("viranomaistiedote", { osoite: "https://pshyvinvointialue.fi/fi/w/tue-lasta-tai-nuorta-hae-tukihenkiloksi-" });
   check(!t.isError && t.text.includes("Viimeinen ilmoittautumispäivä on 23.11.2026.") && !/puhelin 044|@pshyvinvointialue|Lisätietoja ja ilmoittautuminen/.test(t.text), "viranomaistiedote Pohjois-Savo: yhteystiedot pois, niiden jälkeinen rivi jää");
 }
