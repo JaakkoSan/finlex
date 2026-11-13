@@ -5,7 +5,7 @@ import worker from "../src/index.js";
 import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
 import { HVA_FEEDS, feedItems } from "../src/tiedotteet.js";
-import { menCacheTtl, menSearchTerms, menQueryMatch } from "../src/men.js";
+import { menCacheTtl, menSearchTerms, menQueryMatch, parseStatement } from "../src/men.js";
 import { readFileSync } from "node:fs";
 
 const env = {};
@@ -237,7 +237,10 @@ const menCases = [
   ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("- 7 Markkinoinnin tunnistettavuus: ") && !t.includes("7 artikla - ") && t.includes(MEN_SRC)],
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja" }, (t) => /: \d+ osumaa, sivu 1\/\d+/.test(t) && t.includes("tunnus: men-") && t.includes("tiivistelmä:") && t.includes("ei sitova eikä viranomaispäätös") && t.includes(MEN_SRC)],
   // Haku osui jäsenluetteloon (jäsenen titteli "vaikuttaja"); MEN 40/2026 Sports Lady suodatetaan pois (Ohjaamo C1).
-  ["hae_men_lausuntoja", { hakusana: "vaikuttaja", ratkaisu: "huomautus" }, (t) => t.includes("ennen suodatusta (arvio)") && /Tältä sivulta \d+ osumaa suodatettiin pois, koska hakusana oli vain jäsenluettelossa\./.test(t) && !t.includes("Sports Lady") && !t.includes("Kouvolan Lakritsi") && t.includes("MEN 43/2026 Soluni Oy") && t.includes("Lisää tuloksia: sivu 2.")],
+  ["hae_men_lausuntoja", { hakusana: "vaikuttaja", ratkaisu: "huomautus" }, (t) => t.includes("ennen suodatusta (arvio)") && /Tältä sivulta \d+ osumaa? suodatettiin pois, koska hakusana oli vain jäsenluettelossa\./.test(t) && !t.includes("Sports Lady") && !t.includes("Kouvolan Lakritsi") && t.includes("MEN 43/2026 Soluni Oy") && t.includes("Lisää tuloksia: sivu 2.")],
+  // Listan kohdat (li) ovat lausunnon tekstiä: "verenpainee" on vain MEN 39/2026:n listakohdassa.
+  ["hae_men_lausuntoja", { hakusana: "verenpainee" }, (t) => t.includes("MEN 39/2026 Kouvolan Lakritsi Oy") && !t.includes("suodatettiin pois") && /: 1 osuma, sivu 1\/1/.test(t)],
+  ["men_lausunto", { tunnus: "MEN 39/2026", hakusana: "verenpainee" }, (t) => /Hakusana "verenpainee": \d+ osumaa? 1 lohkossa/.test(t) && t.includes("Lausuntopyyntö (")],
   ["hae_men_lausuntoja", { ratkaisu: "vapauttava", vuosi: 2026 }, (t) => t.includes("ratkaisu vapauttava, vuosi 2026") && t.includes("MEN 44/2026 Sinituote Oy") && !t.includes("· huomautus") && !/MEN \d+\/2025/.test(t)],
   ["hae_men_lausuntoja", { ratkaisu: "ei toimivaltaa" }, (t) => t.includes("· ei toimivaltaa") && !t.includes("· vapauttava")],
   ["hae_men_lausuntoja", { artikla: "C2", vuosi: 2026 }, (t) => t.includes("artikla C2 Markkinoinnin tunnistettavuus") && t.includes("C2 Markkinoinnin tunnistettavuus") && t.includes("MEN 43/2026")],
@@ -275,7 +278,11 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(menQueryMatch(doc("MEN 40/2026 Oy", "Mainos verkossa."), t) === "signature", "MEN: osuma vain jäsenluettelossa suodatetaan");
   check(menQueryMatch(doc("MEN 1/2026 Oy", "Vaikuttaja julkaisi kuvan."), t) === "ok" && menQueryMatch(doc("MEN 2/2026 Vaikuttaja", "Mainos."), t) === "ok" && menQueryMatch(doc("MEN 3/2026 Oy", "Mainos.", "<p>vaikuttajamarkkinointi</p>"), t) === "ok", "MEN: osuma tekstissä, otsikossa tai otteessa säilyy");
   check(menQueryMatch(doc("MEN 4/2026 Oy", "Mainos."), menSearchTerms("piilomainonta")) === "ok", "MEN: tietorivit (ASIASANAT) ovat haettavaa tekstiä");
-  check(menQueryMatch(doc("MEN 5/2026 Oy", "Vaikuttaja julkaisi."), menSearchTerms("vaikuttaja counsel")) === "signature" && menQueryMatch(doc("MEN 6/2026 Oy", "Mainos."), menSearchTerms("olematon")) === "other", "MEN: jokainen sana vaaditaan (JA)");
+  check(menQueryMatch(doc("MEN 5/2026 Oy", "Vaikuttaja julkaisi."), menSearchTerms("vaikuttaja counsel")) === "signature" && menQueryMatch(doc("MEN 6/2026 Oy", "Mainos."), menSearchTerms("olematon")) === "other", "MEN: jokainen sana vaaditaan (JA); signature vain, jos termi on allekirjoitusosassa");
+  const liHtml = `<p><strong>Lausuntopyyntö</strong></p><ul><li>Lakritsi aiheuttaa verenpaineen nousuja.</li></ul><p>Asian käsittelyyn ovat osallistuneet jäsenet X ja Y.</p>`;
+  check(menQueryMatch({ title: { rendered: "MEN 39/2026 Oy" }, content: { rendered: liHtml } }, menSearchTerms("verenpainee")) === "ok" && parseStatement(liHtml).sections.some((x) => x.text.includes("- Lakritsi aiheuttaa verenpaineen")), "MEN: listan kohta (li) on haettavaa tekstiä ja näkyy lohkossa");
+  check(menQueryMatch(doc("MEN 7/2026 Oy", "Hinta 100\u00a0% – ”paras” …"), menSearchTerms('100 % - "paras" ...')) === "ok" && menQueryMatch(doc("MEN 8/2026 Oy", "Markkinoijan ’oma’ tuote."), menSearchTerms("markkinoijan 'oma'")) === "ok", "MEN: lainausmerkit, viivat, kolme pistettä ja nbsp normalisoidaan");
+  check(same(menSearchTerms("a b c"), ["a b c"]) && same(menSearchTerms("1 2 3 4 5 6 7 8 9 10"), ["1 2 3 4 5 6 7 8 9 10"]) && same(menSearchTerms("x\ny"), ["xy"]), "MEN: vain lyhyitä tai yli 9 termiä -> koko haku yhtenä terminä, rivinvaihdot pois");
 }
 
 // Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
