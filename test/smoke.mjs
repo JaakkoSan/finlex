@@ -4,7 +4,7 @@
 import worker from "../src/index.js";
 import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
-import { HVA_FEEDS, feedItems, dropContacts } from "../src/tiedotteet.js";
+import { HVA_FEEDS, feedItems, dropContacts, itemText } from "../src/tiedotteet.js";
 import { menCacheTtl, menSearchTerms, menQueryMatch, parseStatement } from "../src/men.js";
 import { readFileSync } from "node:fs";
 
@@ -322,10 +322,16 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(same(menSearchTerms("a b c"), ["a b c"]) && same(menSearchTerms("1 2 3 4 5 6 7 8 9 10"), ["1 2 3 4 5 6 7 8 9 10"]) && same(menSearchTerms("x\ny"), ["xy"]), "MEN: vain lyhyitä tai yli 9 termiä -> koko haku yhtenä terminä, rivinvaihdot pois");
 }
 
+// Hyvinvointialueen tiedotteen päivä: otsikossa oleva muu päivä (15.11.) ei saa korvata julkaisupäivää (v1.16.1).
+{
+  const t = await itemText("https://www.hyvaep.fi/tiedote/vuodeosastoverkon-muutokset-ovat-edenneet-kurikan-akuuttiosasto-sulkeutuu-15-11-2026/");
+  check(!t || t.date === "11.11.2026", `HVA-tiedote: julkaisupäivä eikä otsikon päivä (${t ? t.date : "sivu ei saatavilla"})`);
+}
+
 // Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
 {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.16.1" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }

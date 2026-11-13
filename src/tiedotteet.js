@@ -271,12 +271,19 @@ function hvaPage(html, page) {
   const h1m = html.slice(from).match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   const h1 = h1m ? { 1: h1m[1], index: from + h1m.index } : null;
   const title = htmlText(h1?.[1] ?? "").replace(/\s+/g, " ");
-  // Päivä: julkaisuaika metatiedoista, otsikon ja tekstin välistä <time>-elementistä tai päivämäärärivistä.
+  // Päivä: julkaisuaika metatiedoista, otsikon ja tekstin välistä <time>-elementistä tai päivämäärärivistä,
+  // JSON-LD:n datePublished-kentästä tai otsikkoa edeltävästä päivämäärärivistä. Otsikko (h1) ja sitä
+  // toistava murupolku ohitetaan ensin, koska otsikossa voi olla muu päivä (esim. "Kurikan akuuttiosasto
+  // sulkeutuu 15.11.2026").
   const head = html.slice(h1 ? h1.index : 0, c.at);
+  const textDate = (s) =>
+    htmlText(s.replace(/<(svg|script|style|h1)\b[\s\S]*?<\/\1>/gi, "")).match(/\b\d{1,2}\.\d{1,2}\.20\d{2}\b/)?.[0] ?? "";
   const date =
     fiDate(head.match(/datetime="([^"]+)"/i)?.[1]) ||
     fiDate(html.match(/<meta[^>]+property="article:published_time"[^>]+content="([^"]+)"/i)?.[1]) ||
-    (htmlText(html.slice(page.head ? from : Math.max(0, (h1?.index ?? 0) - 1500), c.at).replace(/<(svg|script|style)[\s\S]*?<\/\1>/gi, "")).match(/\b\d{1,2}\.\d{1,2}\.20\d{2}\b/)?.[0] ?? "");
+    textDate(head) ||
+    fiDate(html.match(/"datePublished"\s*:\s*"([^"]+)"/)?.[1]) ||
+    textDate(html.slice(page.head ? from : Math.max(0, (h1?.index ?? 0) - 1500), c.at));
   const body = c.body.replace(/<!--[\s\S]*?-->/g, "").replace(/<(nav|figure|form|aside)\b[\s\S]*?<\/\1>/gi, "");
   return { title, date, text: dropContacts(htmlText(body)) };
 }
