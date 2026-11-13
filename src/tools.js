@@ -3717,7 +3717,8 @@ async function menLausunto(args) {
     if (q.length > MEN_QUERY_MAX) throw new UserError(`hakusana: enintään ${MEN_QUERY_MAX} merkkiä.`);
     // Pääjohdon teksti sisältää alalohkot, joten haetaan alimmilta tasoilta (ei kahteen kertaan).
     const parents = new Set(d.sections.filter((x) => x.level === 2).map((x) => x.parent));
-    const parts = d.sections.filter((x) => x.level === 2 || !parents.has(x.title));
+    // Pääjohdosta, jolla on alalohkoja, haetaan vain sen oma teksti ennen ensimmäistä alalohkoa.
+    const parts = d.sections.flatMap((x) => (x.level === 2 || !parents.has(x.title) ? [x] : x.intro ? [{ title: x.title, text: x.intro }] : []));
     const hits = [];
     for (const x of parts) {
       const e = excerpts(x.text, q.toLowerCase());

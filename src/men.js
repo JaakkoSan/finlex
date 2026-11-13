@@ -346,6 +346,7 @@ export function parseStatement(html) {
       if (short && wholeIn(frag, "em|i")) {
         push();
         cur = { title: text, level: 2, parent: main?.title ?? null, lines: [] };
+        if (main && main.introEnd === undefined) main.introEnd = main.lines.length; // pääjohdon oma teksti ennen alalohkoja
         if (main) main.lines.push(text);
         continue;
       }
@@ -358,7 +359,9 @@ export function parseStatement(html) {
   return {
     summary,
     info,
-    sections: sections.map((x) => ({ title: x.title, level: x.level, parent: x.parent, text: x.lines.join("\n") })).filter((x) => x.text),
+    sections: sections
+      .map((x) => ({ title: x.title, level: x.level, parent: x.parent, text: x.lines.join("\n"), ...(x.introEnd ? { intro: x.lines.slice(0, x.introEnd).join("\n") } : {}) }))
+      .filter((x) => x.text),
   };
 }
 

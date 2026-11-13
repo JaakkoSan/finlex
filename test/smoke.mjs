@@ -241,6 +241,8 @@ const menCases = [
   // Listan kohdat (li) ovat lausunnon tekstiä: "verenpainee" on vain MEN 39/2026:n listakohdassa.
   ["hae_men_lausuntoja", { hakusana: "verenpainee" }, (t) => t.includes("MEN 39/2026 Kouvolan Lakritsi Oy") && !t.includes("suodatettiin pois") && /: 1 osuma, sivu 1\/1/.test(t)],
   ["men_lausunto", { tunnus: "MEN 39/2026", hakusana: "verenpainee" }, (t) => /Hakusana "verenpainee": \d+ osumaa? 1 lohkossa/.test(t) && t.includes("Lausuntopyyntö (")],
+  // Pääjohdon oma teksti ennen alalohkoja on haettavissa (MEN 21/2015: lista neuvoston lausunnon johdannossa).
+  ["men_lausunto", { tunnus: "MEN 21/2015", hakusana: "seksuaalisia" }, (t) => !/Hakusana "seksuaalisia": 0 osumaa/.test(t) && /Mainonnan eettisen neuvoston lausunto \(\d+\)/.test(t)],
   ["hae_men_lausuntoja", { ratkaisu: "vapauttava", vuosi: 2026 }, (t) => t.includes("ratkaisu vapauttava, vuosi 2026") && t.includes("MEN 44/2026 Sinituote Oy") && !t.includes("· huomautus") && !/MEN \d+\/2025/.test(t)],
   ["hae_men_lausuntoja", { ratkaisu: "ei toimivaltaa" }, (t) => t.includes("· ei toimivaltaa") && !t.includes("· vapauttava")],
   ["hae_men_lausuntoja", { artikla: "C2", vuosi: 2026 }, (t) => t.includes("artikla C2 Markkinoinnin tunnistettavuus") && t.includes("C2 Markkinoinnin tunnistettavuus") && t.includes("MEN 43/2026")],
