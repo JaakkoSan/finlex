@@ -5,6 +5,7 @@ import worker from "../src/index.js";
 import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
 import { HVA_FEEDS, feedItems } from "../src/tiedotteet.js";
+import { menCacheTtl } from "../src/men.js";
 import { readFileSync } from "node:fs";
 
 const env = {};
@@ -233,7 +234,7 @@ const menBlock = (t, title) => {
   return i >= 0 && j > i ? t.slice(i + title.length + 3, j) : null;
 };
 const menCases = [
-  ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("7 artikla - Markkinoinnin tunnistettavuus") && t.includes(MEN_SRC)],
+  ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("- 7 Markkinoinnin tunnistettavuus: ") && !t.includes("7 artikla - ") && t.includes(MEN_SRC)],
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja" }, (t) => /: \d+ osumaa, sivu 1\/\d+/.test(t) && t.includes("tunnus: men-") && t.includes("tiivistelmä:") && t.includes("ei sitova eikä viranomaispäätös") && t.includes(MEN_SRC)],
   ["hae_men_lausuntoja", { ratkaisu: "vapauttava", vuosi: 2026 }, (t) => t.includes("ratkaisu vapauttava, vuosi 2026") && t.includes("MEN 44/2026 Sinituote Oy") && !t.includes("· huomautus") && !/MEN \d+\/2025/.test(t)],
   ["hae_men_lausuntoja", { ratkaisu: "ei toimivaltaa" }, (t) => t.includes("· ei toimivaltaa") && !t.includes("· vapauttava")],
@@ -248,15 +249,19 @@ const menCases = [
   ["men_lausunto", { tunnus: "MEN 999/2026" }, (t) => t.includes("ei löytynyt")],
   ["men_lausunto", { tunnus: "men-ei-tallaista-lausuntoa-xyz" }, (t) => t.includes("ei löytynyt")],
   ["men_lausunto", { tunnus: "jotain muuta" }, (t) => t.includes("Anna lausunnon numero")],
+  ["hae_men_lausuntoja", { hakusana: "x".repeat(101) }, (t) => t.includes("enintään 100 merkkiä")],
 ];
 for (const [name, args, pred] of menCases) {
   const t0 = Date.now();
   const r = await tool(name, args);
-  const expectErr = r.text.includes("ei löytynyt") || r.text.startsWith("Anna lausunnon numero");
+  const expectErr = r.text.includes("ei löytynyt") || r.text.startsWith("Anna lausunnon numero") || r.text.includes("enintään 100 merkkiä");
   const ok = pred(r.text) && r.isError === expectErr;
   check(ok, `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
   if (show || !ok) console.log(r.text.slice(0, 2500), "\n------");
 }
+
+// Tyhjä MEN-tulos ei saa pitkää välimuistiaikaa (korvike: menCacheTtl).
+check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 && menCacheTtl({}, 86400) === 3600 && menCacheTtl([{ id: 1 }], 30 * 86400) === 30 * 86400, "MEN: tyhjä tulos välimuistiin enintään 1 h");
 
 // Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
 {

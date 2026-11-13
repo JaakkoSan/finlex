@@ -30,7 +30,12 @@ async function getJson(path, ttl) {
   }
   if (res.status === 400) return { status: 400, body: null };
   if (!res.ok) throw new KrilError(`HTTP ${res.status}`);
-  const body = await res.json();
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    throw new KrilError("kelvoton vastaus");
+  }
   const value = { status: 200, body, total: Number(res.headers.get("x-wp-total") ?? 0), pages: Number(res.headers.get("x-wp-totalpages") ?? 0) };
   await cachePutJson(key, value, ttl);
   return value;
@@ -75,6 +80,7 @@ export async function searchDecisions({ query, themeId, from, to, page }) {
   const [r, themes] = await Promise.all([getJson(`/paatos?${p}`, SEARCH_TTL), krilThemes()]);
   const names = new Map(themes.map((t) => [t.id, t.name]));
   if (r.status === 400) return { items: [], total: 0, pages: 0, outOfRange: true };
+  if (!Array.isArray(r.body)) throw new KrilError("kelvoton vastaus");
   return { items: r.body.map((d) => summaryOf(d, names)), total: r.total, pages: r.pages };
 }
 

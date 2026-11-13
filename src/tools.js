@@ -474,7 +474,7 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        hakusana: { type: "string", description: "Sana tai sanat, esim. \"vaikuttaja\", \"alkoholi\", \"ilmainen\". Haku kohdistuu otsikkoon ja tekstiin. Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanat, esim. \"vaikuttaja\", \"alkoholi\", \"ilmainen\". Haku kohdistuu otsikkoon ja tekstiin. Enintään 100 merkkiä. Valinnainen." },
         ratkaisu: { type: "string", enum: ["huomautus", "vapauttava", "ei toimivaltaa"], description: "Lausunnon ratkaisu. Valinnainen." },
         artikla: { type: "string", description: "ICC:n markkinointisääntöjen artiklan numero tai nimen osa, esim. \"7\", \"C2\", \"vaikuttaja\", \"lapset\". Osuu sekä vanhoihin että uusiin sääntöihin; useita pilkulla (TAI). Valinnainen." },
         media: { type: "string", description: "Media, esim. \"sovellus\" (sosiaalinen media ja sovellukset), \"internet\", \"tv\", \"radio\", \"lehti\", \"ulkomainos\", \"suoramarkkinointi\", \"tuotepakkaus\". Valinnainen." },
@@ -488,7 +488,7 @@ export const TOOLS = [
   {
     name: "men_lausunto",
     description:
-      "Palauttaa lainauksen Mainonnan eettisen neuvoston lausunnosta kauppakamari.fi:stä numerolla (esim. \"MEN 43/2026\"), tunnuksella tai osoitteella. Oletuksena yleiskuva: tiivistelmä, tietorivit (asiasanat, artiklat, markkinoija, media, päätös), lohkojen luettelo ja asian arviointi. Parametrilla lohko yksi lohko (esim. \"lausuntopyyntö\", \"markkinointi\", \"markkinoijan vastaus\", \"arviointi\"), enintään noin 4 000 merkkiä; parametrilla hakusana osumat otteineen. Koko teksti on lähteen sivulla.",
+      "Palauttaa lainauksen Mainonnan eettisen neuvoston lausunnosta kauppakamari.fi:stä numerolla (esim. \"MEN 43/2026\"), tunnuksella tai osoitteella. Oletuksena yleiskuva: tiivistelmä, tietorivit (asiasanat, artiklat, markkinoija, media, päätös), lohkojen luettelo ja asian arviointi. Parametrilla lohko yksi lohko (esim. \"lausuntopyyntö\", \"markkinointi\", \"markkinoijan vastaus\", \"arviointi\"), enintään noin 4 000 merkkiä; parametrilla hakusana osumat otteineen. Koko teksti on lähteen sivulla: älä kokoa koko lausuntoa lohko kerrallaan, vaan ohjaa koko tekstiin Lähde-linkillä.",
     inputSchema: {
       type: "object",
       properties: {
@@ -3581,6 +3581,7 @@ async function krilRatkaisu(args) {
 
 const MEN_SRC = "Mainonnan eettinen neuvosto, Keskuskauppakamari";
 const MEN_BLOCK_MAX = 4000;
+const MEN_QUERY_MAX = 100;
 const MEN_NOTE =
   "Mainonnan eettisen neuvoston lausunto on itsesääntelyelimen suositusluonteinen kannanotto siitä, onko markkinointi hyvän tavan vastaista tai tunnistettavissa markkinoinniksi ICC:n markkinointisääntöjen mukaan. Se ei ole sitova eikä viranomaispäätös, eikä neuvosto ota kantaa lainvastaisuuteen. Markkinointia arvioidaan myös kuluttajansuojalain ja muun lainsäädännön mukaan; lainmukaisuuden arvioivat KKV ja tuomioistuimet (esim. kuluttajansuojalaki 38/1978 2 luku, hae_pykala).";
 
@@ -3600,6 +3601,7 @@ function menCut(text, link) {
 
 async function haeMenLausuntoja(args) {
   const query = String(args.hakusana ?? "").trim();
+  if (query.length > MEN_QUERY_MAX) throw new UserError(`hakusana: enintään ${MEN_QUERY_MAX} merkkiä.`);
   const page = args.sivu === undefined ? 1 : Number(args.sivu);
   if (!Number.isInteger(page) || page < 1 || page > 100) throw new UserError("sivu: 1–100.");
   const { from, to } = menYearRange(args);
@@ -3649,7 +3651,7 @@ async function haeMenLausuntoja(args) {
     const out = [`Mainonnan eettisen neuvoston lausunnot: ${total} kpl, vuodet ${yrs[0]}–${yrs[yrs.length - 1]}.`, "", "Ratkaisut:"];
     for (const [n, c] of sum(tax.decisions)) out.push(`- ${n}: ${c}`);
     out.push("", "Yleisimmät ICC-artiklat (vanhat ja uudet säännöt; sama aihe voi olla eri numerolla):");
-    for (const t of tax.icc.filter((t) => t.count > 0).sort((a, b) => b.count - a.count).slice(0, 14)) out.push(`- ${t.name}: ${t.count}`);
+    for (const t of tax.icc.filter((t) => t.count > 0).sort((a, b) => b.count - a.count).slice(0, 14)) out.push(`- ${shortArticle(t.name)}: ${t.count}`);
     out.push("", "Mediat:");
     for (const [n, c] of sum(tax.media)) out.push(`- ${n}: ${c}`);
     out.push("", "Hae lausuntoja hakusanalla, ratkaisulla, artiklalla, medialla tai vuosilla. Kaikkia lausuntoja ei ole luokiteltu, joten hakusana kattaa enemmän.", src);
@@ -3700,6 +3702,7 @@ async function menLausunto(args) {
 
   if (args.hakusana !== undefined && String(args.hakusana).trim()) {
     const q = String(args.hakusana).trim();
+    if (q.length > MEN_QUERY_MAX) throw new UserError(`hakusana: enintään ${MEN_QUERY_MAX} merkkiä.`);
     // Pääjohdon teksti sisältää alalohkot, joten haetaan alimmilta tasoilta (ei kahteen kertaan).
     const parents = new Set(d.sections.filter((x) => x.level === 2).map((x) => x.parent));
     const parts = d.sections.filter((x) => x.level === 2 || !parents.has(x.title));

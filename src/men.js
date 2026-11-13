@@ -19,6 +19,19 @@ export const MEN_PAGE_SIZE = 10;
 
 export class MenError extends FinlexError {}
 
+const EMPTY_TTL = 3600; // tyhjä tulos enintään 1 h, jotta uusi lausunto löytyy pian
+
+/** Välimuistin kesto: tyhjä tulos (ei taulukko tai tyhjä taulukko) enintään 1 h. */
+export function menCacheTtl(body, ttl) {
+  return Array.isArray(body) && body.length ? ttl : Math.min(ttl, EMPTY_TTL);
+}
+
+const list = (r) => {
+  if (r.body == null) return [];
+  if (!Array.isArray(r.body)) throw new MenError("kelvoton vastaus");
+  return r.body;
+};
+
 async function getJson(path, ttl) {
   const url = `${API}${path}`;
   const key = `https://finlex-mcp.cache/men/v1${path}`;
@@ -32,9 +45,14 @@ async function getJson(path, ttl) {
   }
   if (res.status === 400) return { status: 400, body: null };
   if (!res.ok) throw new MenError(`HTTP ${res.status}`);
-  const body = await res.json();
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    throw new MenError("kelvoton vastaus");
+  }
   const value = { status: 200, body, total: Number(res.headers.get("x-wp-total") ?? 0), pages: Number(res.headers.get("x-wp-totalpages") ?? 0) };
-  await cachePutJson(key, value, ttl);
+  await cachePutJson(key, value, menCacheTtl(body, ttl));
   return value;
 }
 
@@ -42,7 +60,7 @@ const clean = (s) => decode(String(s ?? "")).replace(/[ \s]+/g, " ").trim();
 
 async function terms(tax) {
   const r = await getJson(`/${tax}?per_page=100&_fields=id,name,slug,count`, TERM_TTL);
-  return (r.body ?? []).map((t) => ({ id: t.id, name: clean(t.name), slug: t.slug, count: t.count }));
+  return list(r).map((t) => ({ id: t.id, name: clean(t.name), slug: t.slug, count: t.count }));
 }
 
 /** Luokittelut: { decisions, icc, media, years } (kukin [{ id, name, slug, count }]). */
@@ -137,7 +155,7 @@ export async function searchStatements({ query, decisionIds, iccIds, mediaIds, y
   const r = await getJson(`/men?${p}`, SEARCH_TTL);
   if (r.status === 400) return { items: [], total: 0, pages: 0, outOfRange: true };
   const maps = nameMaps(tax);
-  return { items: r.body.map((d) => summaryOf(d, maps)), total: r.total, pages: r.pages };
+  return { items: list(r).map((d) => summaryOf(d, maps)), total: r.total, pages: r.pages };
 }
 
 /**
@@ -162,8 +180,8 @@ export async function slugByNumber(num, year) {
   for (const yid of tries) {
     const p = new URLSearchParams({ search: `${num}/${year}`, per_page: "20", _fields: "slug,title" });
     if (yid) p.set("men_date", String(yid));
-    const r = await getJson(`/men?${p}`, STATEMENT_TTL);
-    const hit = (r.body ?? []).find((d) => {
+    const r = await getJson(`/men?${p}`, SEARCH_TTL);
+    const hit = list(r).find((d) => {
       const t = titleNumber(clean(d.title?.rendered));
       return t && t.num === num && t.year === year;
     });
@@ -176,7 +194,7 @@ export async function slugByNumber(num, year) {
 export async function statementBySlug(slug) {
   const p = new URLSearchParams({ slug, _fields: `${LIST_FIELDS},content` });
   const [r, tax] = await Promise.all([getJson(`/men?${p}`, STATEMENT_TTL), menTaxonomies({ years: true })]);
-  const d = r.body?.[0];
+  const d = list(r)[0];
   if (!d) return null;
   const s = summaryOf(d, nameMaps(tax));
   const parsed = parseStatement(d.content?.rendered ?? "");
