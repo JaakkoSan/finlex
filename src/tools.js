@@ -35,6 +35,7 @@ import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSect
 import { FEEDS, HVA_MISSING, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
 import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, guideList, docPage, findByNumber, guideText, attachmentText, splitGuidePdfs, isExemption } from "./kila.js";
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
+import { KrilError, KRIL_BASE, KRIL_PAGE_SIZE, krilThemes, matchTheme, searchDecisions, krilSlug, decisionBySlug, OVERVIEW as KRIL_OVERVIEW } from "./kril.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -436,6 +437,36 @@ export const TOOLS = [
     },
   },
   {
+    name: "hae_kril_ratkaisuja",
+    description:
+      "Hakee Kuluttajariitalautakunnan ratkaisuja (noin 1 290 kpl, julkaistu 2000 alkaen) kuluttajariita.fi:stä: hakusana (otsikko ja teksti), teema (esim. \"Muut palvelut\", \"Etämyynti\", \"Terveydenhoitopalvelut\", \"Tavarat\"), julkaisuvuodet. Palauttaa otsikon, julkaisupäivän, teeman ja tunnuksen, 10 kerrallaan uusimmasta alkaen. Lue ratkaisu kril_ratkaisu-työkalulla. Ilman parametreja palauttaa teemat ja niiden ratkaisumäärät.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hakusana: { type: "string", description: "Sana tai sanat, esim. \"peruutusmaksu\", \"lahjakortti\", \"hinnanalennus\". Haku kohdistuu otsikkoon ja tekstiin. Valinnainen." },
+        teema: { type: "string", description: "Teeman nimi tai sen osa, esim. \"Muut palvelut\" tai \"etämyynti\". Valinnainen." },
+        vuosi: { type: "integer", description: "Julkaisuvuosi sivustolla. Valinnainen." },
+        alkaen_vuosi: { type: "integer", description: "Julkaistu aikaisintaan tänä vuonna. Valinnainen." },
+        paattyen_vuosi: { type: "integer", description: "Julkaistu viimeistään tänä vuonna. Valinnainen." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla 10 tulosta." },
+      },
+    },
+  },
+  {
+    name: "kril_ratkaisu",
+    description:
+      "Palauttaa Kuluttajariitalautakunnan ratkaisun tekstin kuluttajariita.fi:stä tunnuksella tai osoitteella. Oletuksena yleiskuva: asiasanat, osien luettelo, asiaselostus, lautakunnan ratkaisu (suositus) ja lopputulos. Parametrilla osa yksi osa (esim. \"perustelut\", \"vaatimukset\", \"vastaus\") tai \"kaikki\"; parametrilla hakusana osumat otteineen osittain.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tunnus: { type: "string", description: "Ratkaisun tunnus hae_kril_ratkaisuja-työkalun tuloksesta (osoitteen loppuosa, esim. \"lahjakortin-voimassaolo\") tai koko osoite https://www.kuluttajariita.fi/paatokset/..." },
+        osa: { type: "string", description: "Osan otsikko tai sen osa (esim. \"perustelut\", \"vaatimukset\", \"lopputulos\") tai \"kaikki\". Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanonta, jota etsitään tekstistä; käytä sanan vartaloa (esim. \"peruutu\"). Valinnainen." },
+      },
+      required: ["tunnus"],
+    },
+  },
+  {
     name: "hae_viranomaisohjeita",
     description:
       "Hakee viranomaisten ohjeita ja linjauksia niiden verkkosivuilta: Traficom (Kyberturvallisuuskeskus: evästeet, sähköisen viestinnän tietoturva ja luottamuksellisuus, sähköinen tunnistaminen ja luottamuspalvelut, kyberturvallisuusohjeet ja -oppaat), tietosuojavaltuutettu (tietosuoja.fi:n ohjeet, esim. käsittelyperusteet, rekisteröidyn oikeudet, kameravalvonta, työelämä), KKV (kuluttaja-asiamiehen linjaukset ja ohjeistukset, kuluttaja-asioiden ohjeet, päätökset) ja PRH (kaupparekisteri, yhdistykset, säätiöt, tavaramerkit, patentit). Haku kohdistuu otsikkoon ja osoitteeseen (KKV:ssa sivujen otsikoihin WordPressin hakurajapinnalla ja päätöksissä osoitteeseen; KKV:n päätöksen voi hakea myös diaarinumerolla). Palauttaa otsikon ja osoitteen; lue ohje viranomaisohje-työkalulla.",
@@ -552,6 +583,8 @@ const TITLES = {
   viranomaisohje: "Viranomaisen ohje",
   hae_kila_lausuntoja: "Hae kirjanpitolautakunnan lausuntoja",
   kila_lausunto: "Kirjanpitolautakunnan lausunto tai yleisohje",
+  hae_kril_ratkaisuja: "Hae Kuluttajariitalautakunnan ratkaisuja",
+  kril_ratkaisu: "Kuluttajariitalautakunnan ratkaisu",
 };
 for (const t of TOOLS) {
   t.annotations = {
@@ -3421,6 +3454,94 @@ async function viranomaismaarays(args) {
   return clip(out.join("\n"));
 }
 
+// ---------- Kuluttajariitalautakunta (KRIL) ----------
+
+const KRIL_SRC = "Kuluttajariitalautakunta, kuluttajariita.fi";
+const KRIL_TEXT_MAX = 40_000;
+const KRIL_NOTE =
+  "Kuluttajariitalautakunnan ratkaisu on suositus, ei sitova tuomio. Se koskee yksittäistä tapausta ja antamisajan säännöksiä; tarkista voimassa oleva laki hae_pykala-työkalulla (esim. kuluttajansuojalaki 38/1978). Päivä on sivustolle julkaisun päivä, joka vanhoissa ratkaisuissa ei välttämättä ole ratkaisupäivä.";
+
+async function haeKrilRatkaisuja(args) {
+  const query = String(args.hakusana ?? "").trim();
+  const page = args.sivu === undefined ? 1 : Number(args.sivu);
+  if (!Number.isInteger(page) || page < 1 || page > 100) throw new UserError("sivu: 1–100.");
+  let from = args.alkaen_vuosi ? asYear(args.alkaen_vuosi) : undefined;
+  let to = args.paattyen_vuosi ? asYear(args.paattyen_vuosi) : undefined;
+  if (args.vuosi) from = to = asYear(args.vuosi);
+  if (from && to && from > to) throw new UserError("alkaen_vuosi on myöhempi kuin paattyen_vuosi.");
+  const themes = await krilThemes();
+  const src = `Lähde: ${KRIL_BASE}/paatokset/ (${KRIL_SRC})`;
+  let theme = null;
+  if (args.teema !== undefined && String(args.teema).trim()) {
+    const m = matchTheme(themes, args.teema);
+    if (!m.theme) {
+      const list = (m.candidates.length ? m.candidates : themes).map((t) => `- ${t.name} (${t.count})`);
+      throw new UserError(`${m.candidates.length ? `Teema "${args.teema}" osui useaan` : `Teemaa "${args.teema}" ei löytynyt`}. Teemat:\n${list.join("\n")}`);
+    }
+    theme = m.theme;
+  }
+  if (!query && !theme && !from && !to) {
+    const out = [`Kuluttajariitalautakunnan ratkaisujen teemat (${themes.length}):`];
+    for (const t of themes) out.push(`- ${t.name}: ${t.count}`);
+    out.push("", "Hae ratkaisuja hakusanalla, teemalla tai vuosilla. Kaikilla ratkaisuilla ei ole teemaa, joten hakusana kattaa enemmän.", src);
+    return out.join("\n");
+  }
+  const r = await searchDecisions({ query, themeId: theme?.id, from, to, page });
+  const crit = [query && `"${query}"`, theme && `teema ${theme.name}`, from && to && from === to ? `julkaistu ${from}` : [from && `alkaen ${from}`, to && `päättyen ${to}`].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  const out = [`Kuluttajariitalautakunnan ratkaisut (${crit}): ${r.total} osumaa${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
+  if (!r.items.length) out.push(r.outOfRange || (r.total && page > r.pages) ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa, toista sanaa tai teemaa.");
+  for (const h of r.items) out.push("", `${fmtDate(h.date) ?? "?"} · ${h.themes.join(", ") || "ei teemaa"} · ${h.title}`, `  tunnus: ${h.slug}`);
+  if (r.pages > page) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  out.push("", "Lue ratkaisu kril_ratkaisu-työkalulla (tunnus; osa, hakusana).", "Ratkaisu on lautakunnan suositus yksittäisessä tapauksessa, ei sitova.", src);
+  return clip(out.join("\n"));
+}
+
+async function krilRatkaisu(args) {
+  const slug = krilSlug(args.tunnus);
+  if (!slug) throw new UserError("Anna tunnus hae_kril_ratkaisuja-työkalun tuloksesta (esim. \"lahjakortin-voimassaolo\") tai osoite https://www.kuluttajariita.fi/paatokset/...");
+  const d = await decisionBySlug(slug);
+  if (!d) throw new UserError(`Ratkaisua tunnuksella "${slug}" ei löytynyt. Hae se hae_kril_ratkaisuja-työkalulla.`);
+  const head = [d.title, `Kuluttajariitalautakunnan ratkaisu, julkaistu ${fmtDate(d.date) ?? "?"}${d.themes.length ? `, teema ${d.themes.join(", ")}` : ""}`];
+  if (d.keywords.length) head.push(`Asiasanat: ${d.keywords.join(", ")}`);
+  const tail = ["", KRIL_NOTE, `Lähde: ${d.link} (${KRIL_SRC})`];
+  const toc = d.sections.length ? [`Osat: ${d.sections.map((x) => x.title).join(" | ")}`] : [];
+  const parts = [...(d.intro ? [{ title: "Alku", text: d.intro }] : []), ...d.sections];
+
+  if (args.hakusana !== undefined && String(args.hakusana).trim()) {
+    const q = String(args.hakusana).trim();
+    const hits = [];
+    for (const x of parts) {
+      const e = excerpts(`${x.title}\n${x.text}`, q.toLowerCase());
+      if (e.n) hits.push({ label: x.title, ...e });
+    }
+    const out = [...head, ...toc, "", `Hakusana "${q}": ${hits.reduce((s, h) => s + h.n, 0)} osumaa ${hits.length} osassa.`];
+    for (const h of hits) {
+      out.push("", `${h.label} (${h.n})`);
+      for (const e of h.ex) out.push(`  ${e}`);
+    }
+    if (!hits.length) out.push("Ei osumia. Haku on kirjaimellinen: kokeile sanan vartaloa.");
+    return clip([...out, ...tail].join("\n"));
+  }
+
+  const want = String(args.osa ?? "").trim().toLowerCase();
+  const cut = (t) => (t.length > KRIL_TEXT_MAX ? `${t.slice(0, KRIL_TEXT_MAX)}\n… (katkaistu; lue osa kerrallaan parametrilla osa)` : t);
+  if (want === "kaikki" || (!d.sections.length && !want)) {
+    const body = d.sections.length ? parts.map((x) => `${x.title}\n${x.text}`).join("\n\n") : d.text;
+    return clip([...head, ...toc, "", cut(body), ...tail].join("\n"));
+  }
+  if (want) {
+    const found = parts.filter((x) => x.title.toLowerCase().includes(want));
+    if (!found.length) throw new UserError(`Osaa "${args.osa}" ei löytynyt. ${toc[0] ?? "Ratkaisussa ei ole otsikoituja osia; käytä osa: \"kaikki\"."}`);
+    return clip([...head, ...toc, "", ...found.flatMap((x) => [x.title, cut(x.text), ""]), ...tail].join("\n"));
+  }
+  const overview = parts.filter((x) => KRIL_OVERVIEW.test(x.title));
+  const shown = overview.length ? overview : parts.slice(0, 1);
+  const out = [...head, ...toc, ""];
+  for (const x of shown) out.push(x.title, cut(x.text), "");
+  out.push(overview.length ? "Muut osat (esim. vaatimukset, vastaus, perustelut): parametri osa tai osa: \"kaikki\"." : "Yleiskuvan osia ei tunnistettu; muut osat parametrilla osa tai osa: \"kaikki\".");
+  return clip([...out, ...tail].join("\n"));
+}
+
 const HANDLERS = {
   hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
@@ -3450,6 +3571,8 @@ const HANDLERS = {
   viranomaisohje,
   hae_kila_lausuntoja: haeKilaLausuntoja,
   kila_lausunto: kilaLausunto,
+  hae_kril_ratkaisuja: haeKrilRatkaisuja,
+  kril_ratkaisu: krilRatkaisu,
 };
 
 export async function callTool(name, args = {}) {
@@ -3466,6 +3589,8 @@ export async function callTool(name, args = {}) {
           ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof KilaError
           ? `Kirjanpitolautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
+          : e instanceof KrilError
+          ? `Kuluttajariitalautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof OhjeUserError
           ? e.message
           : e instanceof OhjeError

@@ -33,7 +33,7 @@ function check(cond, label) {
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 28, "tools/list (28 työkalua)");
+check(list.result?.tools?.length === 30, "tools/list (30 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -201,4 +201,24 @@ for (const [name, args, pred] of kilaCases) {
   const r = await tool(name, args);
   check(!r.isError && pred(r.text), `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
   if (show || r.isError || !pred(r.text)) console.log(r.text.slice(0, 2500), "\n------");
+}
+
+// Kuluttajariitalautakunta (kuluttajariita.fi, WordPressin julkinen rajapinta)
+const HIERONTA = "hieronta-varatun-ajan-peruutus-peruutuksen-syy-peruutusehtojen-kohtuullisuus-kohtuullisuuden-arviointi";
+const krilCases = [
+  ["hae_kril_ratkaisuja", {}, (t) => t.includes("teemat") && t.includes("- Muut palvelut:") && t.includes("Lähde: https://www.kuluttajariita.fi/paatokset/")],
+  ["hae_kril_ratkaisuja", { hakusana: "hieronta" }, (t) => t.includes(`tunnus: ${HIERONTA}`) && t.includes("Muut palvelut") && t.includes("ei sitova")],
+  ["hae_kril_ratkaisuja", { teema: "muut palv", vuosi: 2024 }, (t) => t.includes("teema Muut palvelut, julkaistu 2024") && t.includes("tunnus: lahjakortin-voimassaolo") && !/· \d+\.\d+\.2025 ·/.test(t)],
+  ["hae_kril_ratkaisuja", { teema: "olematon teema" }, (t) => t.includes("ei löytynyt") && t.includes("Etämyynti")],
+  ["kril_ratkaisu", { tunnus: "lahjakortin-voimassaolo" }, (t) => t.includes("julkaistu 21.10.2024, teema Muut palvelut") && t.includes("Asiasanat: Lahjakortti") && t.includes("Lautakunnan ratkaisu\nKuluttajariitalautakunta suosittaa") && !t.includes("Kuluttajan vaatimukset perusteluineen\nKuluttaja on vaatinut") && t.includes("suositus, ei sitova") && t.includes("Lähde: https://www.kuluttajariita.fi/paatokset/lahjakortin-voimassaolo/")],
+  ["kril_ratkaisu", { tunnus: `https://www.kuluttajariita.fi/paatokset/${HIERONTA}/`, osa: "vastaus" }, (t) => t.includes("Osat: Vaatimukset | Vastaus | Ratkaisu") && t.includes("kiistää") && !t.includes("Vaatimukset\nPP vaatii")],
+  ["kril_ratkaisu", { tunnus: HIERONTA, hakusana: "peruutusehto" }, (t) => /Hakusana "peruutusehto": \d+ osumaa/.test(t) && t.includes("Ratkaisu (")],
+  ["kril_ratkaisu", { tunnus: "ei-tallaista-ratkaisua-xyz" }, (t) => t.includes("ei löytynyt")],
+];
+for (const [name, args, pred] of krilCases) {
+  const t0 = Date.now();
+  const r = await tool(name, args);
+  const ok = pred(r.text) && (r.isError === r.text.includes("ei löytynyt"));
+  check(ok, `${name} ${JSON.stringify(args)} (${Date.now() - t0} ms)`);
+  if (show || !ok) console.log(r.text.slice(0, 2500), "\n------");
 }
