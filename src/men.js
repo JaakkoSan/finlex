@@ -32,7 +32,11 @@ const list = (r) => {
   return r.body;
 };
 
-async function getJson(path, ttl) {
+/**
+ * GET + välimuisti. transform(body) muokkaa vastauksen ennen tallennusta, jotta välimuistiin
+ * tallennetaan vain tarvittava (esim. hakutulos ilman lausuntojen tekstiä).
+ */
+async function getJson(path, ttl, transform) {
   const url = `${API}${path}`;
   const key = `https://finlex-mcp.cache/men/v1${path}`;
   const hit = await cacheGetJson(key);
@@ -50,6 +54,10 @@ async function getJson(path, ttl) {
     body = await res.json();
   } catch {
     throw new MenError("kelvoton vastaus");
+  }
+  if (transform) {
+    if (!Array.isArray(body)) throw new MenError("kelvoton vastaus");
+    body = transform(body);
   }
   const value = { status: 200, body, total: Number(res.headers.get("x-wp-total") ?? 0), pages: Number(res.headers.get("x-wp-totalpages") ?? 0) };
   await cachePutJson(key, value, menCacheTtl(body, ttl));
@@ -144,18 +152,73 @@ function summaryOf(d, maps) {
 
 const LIST_FIELDS = "id,date,slug,link,title,excerpt,men_decision,men_icc,men_media,men_date";
 
-/** Haku: { items, total, pages }. Suodattimet ovat termien id-listoja. */
+/**
+ * WordPressin hakusanat (WP_Query::parse_search): lainausmerkeissä oleva fraasi on yksi termi,
+ * muuten erotin on välilyönti, sarkain, pilkku tai plus. Yksittäinen kirjain a–z ja viiva ohitetaan,
+ * "-sana" on poissulkeva termi, ja yli 9 termiä tai ei yhtään -> koko haku yhtenä terminä.
+ * Jokaisen termin pitää osua otsikkoon, otteeseen tai sisältöön (LIKE, kirjainkoosta riippumatta;
+ * kauppakamari.fi:ssä ä ja a ovat eri merkit, tarkistettu 13.11.2026). Palauttaa osuttavat termit pienillä.
+ */
+export function menSearchTerms(query) {
+  const s = String(query ?? "");
+  const m = s.match(/".*?("|$)|((?<=[\t ",+])|^)[^\t ",+]+/g) ?? [];
+  const raw = !m.length || m.length > 9 ? [s] : m;
+  const out = [];
+  for (let t of raw) {
+    t = /^".+"$/.test(t) ? t.replace(/^["']+|["']+$/g, "") : t.replace(/^["' ]+|["' ]+$/g, "");
+    if (!t || /^[a-z-]$/i.test(t)) continue;
+    if (t.startsWith("-")) continue; // poissulku: WordPress on jo rajannut
+    out.push(t.toLowerCase());
+  }
+  return out;
+}
+
+/** Lausunnon haettava teksti: { text } ilman allekirjoitusosaa (sama rajaus kuin men_lausunto) ja { full } kokonaan. */
+export function statementSearchText(html) {
+  const p = parseStatement(html);
+  const text = [p.summary, ...p.headings, ...p.info.map((x) => `${x.label}: ${x.value}`), ...p.sections.flatMap((x) => [x.title, x.text])].join("\n");
+  return { text, full: htmlText(String(html)) };
+}
+
+/**
+ * Osuuko haku lausuntoon ilman allekirjoitusosaa? "ok", "signature" (puuttuva termi oli vain
+ * allekirjoitusosassa eli jäsenluettelossa) tai "other" (termi ei näy lausunnon tekstissä, esim. vain HTML-koodissa).
+ */
+export function menQueryMatch(d, terms) {
+  if (!terms.length) return "ok";
+  const { text, full } = statementSearchText(d.content?.rendered ?? "");
+  const hay = [clean(d.title?.rendered ?? ""), htmlText(d.excerpt?.rendered ?? ""), text].join("\n").toLowerCase();
+  const missing = terms.filter((t) => !hay.includes(t));
+  if (!missing.length) return "ok";
+  const f = full.toLowerCase();
+  return missing.every((t) => f.includes(t)) ? "signature" : "other";
+}
+
+/**
+ * Haku: { items, total, pages, removed: { signature, other } }. Suodattimet ovat termien id-listoja.
+ * Hakusanalla WordPress osuu myös allekirjoitusosan jäsenluetteloon (esim. jäsenen titteli "vaikuttaja"),
+ * joten sivun tulokset tarkistetaan tekstistä ilman allekirjoitusosaa (käyttäjä 13.11.2026 Ohjaamo C1).
+ * total ja pages ovat WordPressin luvut ennen suodatusta. Välimuistiin tallennetaan tulos ilman tekstiä.
+ */
 export async function searchStatements({ query, decisionIds, iccIds, mediaIds, yearIds, page, tax }) {
-  const p = new URLSearchParams({ per_page: String(MEN_PAGE_SIZE), page: String(page), _fields: LIST_FIELDS, orderby: "date", order: "desc" });
+  const p = new URLSearchParams({ per_page: String(MEN_PAGE_SIZE), page: String(page), _fields: query ? `${LIST_FIELDS},content` : LIST_FIELDS, orderby: "date", order: "desc" });
   if (query) p.set("search", query);
   if (decisionIds?.length) p.set("men_decision", decisionIds.join(","));
   if (iccIds?.length) p.set("men_icc", iccIds.join(","));
   if (mediaIds?.length) p.set("men_media", mediaIds.join(","));
   if (yearIds?.length) p.set("men_date", yearIds.join(","));
-  const r = await getJson(`/men?${p}`, SEARCH_TTL);
-  if (r.status === 400) return { items: [], total: 0, pages: 0, outOfRange: true };
+  const terms = query ? menSearchTerms(query) : [];
+  const transform = query ? (body) => body.map(({ content, ...d }) => ({ ...d, match: menQueryMatch({ ...d, content }, terms) })) : undefined;
+  const r = await getJson(`/men?${p}`, SEARCH_TTL, transform);
+  const removed = { signature: 0, other: 0 };
+  if (r.status === 400) return { items: [], total: 0, pages: 0, outOfRange: true, removed };
   const maps = nameMaps(tax);
-  return { items: list(r).map((d) => summaryOf(d, maps)), total: r.total, pages: r.pages };
+  const items = [];
+  for (const d of list(r)) {
+    if (d.match && d.match !== "ok") removed[d.match] = (removed[d.match] ?? 0) + 1;
+    else items.push(summaryOf(d, maps));
+  }
+  return { items, total: r.total, pages: r.pages, removed, filtered: !!query };
 }
 
 /**
@@ -213,11 +276,12 @@ const wholeIn = (frag, tags) => {
  * Lausunnon HTML lohkoiksi. Lihavoitu kappale on päälohko, kursivoitu kappale alalohko.
  * Tietorivit (ASIASANAT, ARTIKLAT, Lausunto, Markkinoija, Media, Alusta, Päätös) erotetaan,
  * ja allekirjoitusosa (käsittelyyn osallistuneet ja allekirjoitukset) jätetään pois.
- * Palauttaa { summary, info: [{ label, value }], sections: [{ title, level, parent, text }] }.
+ * Palauttaa { summary, info: [{ label, value }], headings (isokirjaimiset otsikot), sections: [{ title, level, parent, text }] }.
  */
 export function parseStatement(html) {
   const blocks = String(html).match(/<(p|h[1-6])(?:\s[^>]*)?>[\s\S]*?<\/\1>/gi) ?? [];
   const info = [];
+  const headings = [];
   const sections = [];
   let summary = "";
   let cur = { title: "Alku", level: 1, parent: null, lines: [] };
@@ -247,7 +311,10 @@ export function parseStatement(html) {
       if (signature) continue;
       const short = text.length <= 90 && !/[.:;,]$/.test(text) && text.split(" ").length <= 10;
       if (short && wholeIn(frag, "strong|b")) {
-        if (text === text.toUpperCase()) continue; // otsikko tai MAINONNAN EETTINEN NEUVOSTO / KESKUSKAUPPAKAMARI
+        if (text === text.toUpperCase()) {
+          headings.push(text);
+          continue; // otsikko tai MAINONNAN EETTINEN NEUVOSTO / KESKUSKAUPPAKAMARI
+        }
         push();
         cur = { title: text, level: 1, parent: null, lines: [] };
         main = cur;
@@ -267,6 +334,7 @@ export function parseStatement(html) {
   return {
     summary,
     info,
+    headings,
     sections: sections.map((x) => ({ title: x.title, level: x.level, parent: x.parent, text: x.lines.join("\n") })).filter((x) => x.text),
   };
 }

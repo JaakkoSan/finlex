@@ -5,7 +5,7 @@ import worker from "../src/index.js";
 import { excerpts } from "../src/tools.js";
 import { kilaUrlAllowed } from "../src/kila.js";
 import { HVA_FEEDS, feedItems } from "../src/tiedotteet.js";
-import { menCacheTtl } from "../src/men.js";
+import { menCacheTtl, menSearchTerms, menQueryMatch } from "../src/men.js";
 import { readFileSync } from "node:fs";
 
 const env = {};
@@ -236,6 +236,8 @@ const menBlock = (t, title) => {
 const menCases = [
   ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("- 7 Markkinoinnin tunnistettavuus: ") && !t.includes("7 artikla - ") && t.includes(MEN_SRC)],
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja" }, (t) => /: \d+ osumaa, sivu 1\/\d+/.test(t) && t.includes("tunnus: men-") && t.includes("tiivistelmä:") && t.includes("ei sitova eikä viranomaispäätös") && t.includes(MEN_SRC)],
+  // Haku osui jäsenluetteloon (jäsenen titteli "vaikuttaja"); MEN 40/2026 Sports Lady suodatetaan pois (Ohjaamo C1).
+  ["hae_men_lausuntoja", { hakusana: "vaikuttaja", ratkaisu: "huomautus" }, (t) => t.includes("ennen suodatusta (arvio)") && /Tältä sivulta \d+ osumaa suodatettiin pois, koska hakusana oli vain jäsenluettelossa\./.test(t) && !t.includes("Sports Lady") && !t.includes("Kouvolan Lakritsi") && t.includes("MEN 43/2026 Soluni Oy") && t.includes("Lisää tuloksia: sivu 2.")],
   ["hae_men_lausuntoja", { ratkaisu: "vapauttava", vuosi: 2026 }, (t) => t.includes("ratkaisu vapauttava, vuosi 2026") && t.includes("MEN 44/2026 Sinituote Oy") && !t.includes("· huomautus") && !/MEN \d+\/2025/.test(t)],
   ["hae_men_lausuntoja", { ratkaisu: "ei toimivaltaa" }, (t) => t.includes("· ei toimivaltaa") && !t.includes("· vapauttava")],
   ["hae_men_lausuntoja", { artikla: "C2", vuosi: 2026 }, (t) => t.includes("artikla C2 Markkinoinnin tunnistettavuus") && t.includes("C2 Markkinoinnin tunnistettavuus") && t.includes("MEN 43/2026")],
@@ -263,10 +265,23 @@ for (const [name, args, pred] of menCases) {
 // Tyhjä MEN-tulos ei saa pitkää välimuistiaikaa (korvike: menCacheTtl).
 check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 && menCacheTtl({}, 86400) === 3600 && menCacheTtl([{ id: 1 }], 30 * 86400) === 30 * 86400, "MEN: tyhjä tulos välimuistiin enintään 1 h");
 
+// MEN-haun suodatus: WordPressin hakusanat ja osuma ilman allekirjoitusosaa (jäsenluettelo).
+{
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check(same(menSearchTerms("Vaikuttaja"), ["vaikuttaja"]) && same(menSearchTerms('vaikuttaja "lapsi nuori" -alkoholi a, x+y'), ["vaikuttaja", "lapsi nuori"]) && same(menSearchTerms("vaikuttaja,lapsi"), ["vaikuttaja", "lapsi"]), "MEN: hakusanat WordPressin tapaan");
+  const html = (body) => `<p><strong>Markkinointi</strong></p><p>${body}</p><p><strong>Mainonnan eettisen neuvoston lausunto</strong></p><p>Neuvosto toteaa asian.</p><p>Asian käsittelyyn ovat ottaneet osaa puheenjohtaja X, jäsenet General Counsel Y, vaikuttaja Z.</p><p><strong>ASIASANAT: PIILOMAINONTA</strong></p>`;
+  const doc = (title, body, excerpt = "") => ({ title: { rendered: title }, excerpt: { rendered: excerpt }, content: { rendered: html(body) } });
+  const t = menSearchTerms("vaikuttaja");
+  check(menQueryMatch(doc("MEN 40/2026 Oy", "Mainos verkossa."), t) === "signature", "MEN: osuma vain jäsenluettelossa suodatetaan");
+  check(menQueryMatch(doc("MEN 1/2026 Oy", "Vaikuttaja julkaisi kuvan."), t) === "ok" && menQueryMatch(doc("MEN 2/2026 Vaikuttaja", "Mainos."), t) === "ok" && menQueryMatch(doc("MEN 3/2026 Oy", "Mainos.", "<p>vaikuttajamarkkinointi</p>"), t) === "ok", "MEN: osuma tekstissä, otsikossa tai otteessa säilyy");
+  check(menQueryMatch(doc("MEN 4/2026 Oy", "Mainos."), menSearchTerms("piilomainonta")) === "ok", "MEN: tietorivit (ASIASANAT) ovat haettavaa tekstiä");
+  check(menQueryMatch(doc("MEN 5/2026 Oy", "Vaikuttaja julkaisi."), menSearchTerms("vaikuttaja counsel")) === "signature" && menQueryMatch(doc("MEN 6/2026 Oy", "Mainos."), menSearchTerms("olematon")) === "other", "MEN: jokainen sana vaaditaan (JA)");
+}
+
 // Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
 {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.15.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.15.1" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }

@@ -35,7 +35,7 @@ import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSect
 import { FEEDS, HVA_MISSING, TiedoteError, feedItems, itemText, veroSearch, veroGuide, veroFindDiaari, asDiaari, VERO_TYPES } from "./tiedotteet.js";
 import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, guideList, docPage, findByNumber, guideText, attachmentText, splitGuidePdfs, isExemption } from "./kila.js";
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
-import { MenError, MEN_SEARCH_PAGE, menTaxonomies, menTotal, matchArticles, matchDecision, matchMedia, shortArticle, searchStatements as menSearch, parseMenId, slugByNumber, statementBySlug, overviewSection, findSection } from "./men.js";
+import { MenError, MEN_SEARCH_PAGE, MEN_PAGE_SIZE, menTaxonomies, menTotal, matchArticles, matchDecision, matchMedia, shortArticle, searchStatements as menSearch, parseMenId, slugByNumber, statementBySlug, overviewSection, findSection } from "./men.js";
 import { KrilError, KRIL_BASE, KRIL_PAGE_SIZE, krilThemes, matchTheme, searchDecisions, krilSlug, decisionBySlug, OVERVIEW as KRIL_OVERVIEW } from "./kril.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
@@ -474,14 +474,14 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        hakusana: { type: "string", description: "Sana tai sanat, esim. \"vaikuttaja\", \"alkoholi\", \"ilmainen\". Haku kohdistuu otsikkoon ja tekstiin. Enintään 100 merkkiä. Valinnainen." },
+        hakusana: { type: "string", description: "Sana tai sanat, esim. \"vaikuttaja\", \"alkoholi\", \"ilmainen\". Haku kohdistuu otsikkoon ja lausunnon tekstiin, ei lausunnon lopun jäsenluetteloon. Useasta sanasta jokaisen pitää löytyä; fraasi lainausmerkeissä. Enintään 100 merkkiä. Valinnainen." },
         ratkaisu: { type: "string", enum: ["huomautus", "vapauttava", "ei toimivaltaa"], description: "Lausunnon ratkaisu. Valinnainen." },
         artikla: { type: "string", description: "ICC:n markkinointisääntöjen artiklan numero tai nimen osa, esim. \"7\", \"C2\", \"vaikuttaja\", \"lapset\". Osuu sekä vanhoihin että uusiin sääntöihin; useita pilkulla (TAI). Valinnainen." },
         media: { type: "string", description: "Media, esim. \"sovellus\" (sosiaalinen media ja sovellukset), \"internet\", \"tv\", \"radio\", \"lehti\", \"ulkomainos\", \"suoramarkkinointi\", \"tuotepakkaus\". Valinnainen." },
         vuosi: { type: "integer", description: "Lausunnon vuosi. Valinnainen." },
         alkaen_vuosi: { type: "integer", description: "Lausunto aikaisintaan tältä vuodelta. Valinnainen." },
         paattyen_vuosi: { type: "integer", description: "Lausunto viimeistään tältä vuodelta. Valinnainen." },
-        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla 10 tulosta." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta." },
       },
     },
   },
@@ -3526,7 +3526,7 @@ async function haeKrilRatkaisuja(args) {
   const out = [`Kuluttajariitalautakunnan ratkaisut (${crit}): ${r.total} osumaa${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
   if (!r.items.length) out.push(r.outOfRange || (r.total && page > r.pages) ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa, toista sanaa tai teemaa.");
   for (const h of r.items) out.push("", `${fmtDate(h.date) ?? "?"} · ${h.themes.join(", ") || "ei teemaa"} · ${h.title}`, `  tunnus: ${h.slug}`);
-  if (r.pages > page) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  if (r.pages > page && r.items.length) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
   out.push("", "Lue ratkaisu kril_ratkaisu-työkalulla (tunnus; osa, hakusana).", "Ratkaisu on lautakunnan suositus yksittäisessä tapauksessa, ei sitova.", src);
   return clip(out.join("\n"));
 }
@@ -3659,15 +3659,25 @@ async function haeMenLausuntoja(args) {
   }
   const r = await menSearch({ query, decisionIds, iccIds, mediaIds, yearIds, page, tax });
   const label = [query && `"${query}"`, ...crit].filter(Boolean).join(", ");
+  const removed = r.removed.signature + r.removed.other;
   const out = [`Mainonnan eettisen neuvoston lausunnot (${label}): ${r.total} osumaa${r.pages ? `, sivu ${page}/${r.pages}` : ""}, uusin ensin.`];
-  if (!r.items.length) out.push(r.outOfRange || (r.total && page > r.pages) ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa, toista sanaa tai väljempiä rajauksia.");
+  if (r.filtered && r.total) {
+    out.push(`Osumamäärä on kauppakamari.fi:n haun luku ennen suodatusta (arvio). Haku osuu myös lausuntojen lopun jäsenluetteloon, joten liitin näyttää vain lausunnot, joissa hakusana on otsikossa tai lausunnon tekstissä; sivulla on siksi enintään ${MEN_PAGE_SIZE} tulosta.`);
+    if (r.removed.signature) out.push(`Tältä sivulta ${r.removed.signature} osumaa suodatettiin pois, koska hakusana oli vain jäsenluettelossa.`);
+    if (r.removed.other) out.push(`Tältä sivulta ${r.removed.other} osumaa suodatettiin pois, koska hakusana ei näkynyt lausunnon tekstissä.`);
+  }
+  if (!r.items.length) {
+    if (removed && r.pages > page) out.push(`Tälle sivulle ei jäänyt osumia suodatuksen jälkeen. Katso seuraava sivu: sivu ${page + 1}.`);
+    else if (removed) out.push("Tälle sivulle ei jäänyt osumia suodatuksen jälkeen, eikä seuraavia sivuja ole.");
+    else out.push(r.outOfRange || (r.total && page > r.pages) ? "Sivulla ei ole tuloksia." : "Ei osumia. Kokeile sanan perusmuotoa, toista sanaa tai väljempiä rajauksia.");
+  }
   for (const h of r.items) {
     out.push("", h.title, `  julkaistu ${fmtDate(h.date) ?? "?"} · ${h.decisions.join(", ") || "ratkaisu ei luokiteltu"}${h.media.length ? ` · media ${h.media.join(", ")}` : ""}`);
     if (h.articles.length) out.push(`  artiklat: ${h.articles.map(shortArticle).join(" | ")}`);
     if (h.summary) out.push(`  tiivistelmä: ${h.summary.length > 400 ? `${h.summary.slice(0, 400).replace(/\s+\S*$/, "")} …` : h.summary}`);
     out.push(`  tunnus: ${h.slug}`);
   }
-  if (r.pages > page) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
+  if (r.pages > page && r.items.length) out.push("", `Lisää tuloksia: sivu ${page + 1}.`);
   out.push("", "Lue lausunto men_lausunto-työkalulla (tunnus tai numero; lohko, hakusana).", "Lausunto on itsesääntelyelimen suositusluonteinen kannanotto, ei sitova eikä viranomaispäätös.", src);
   return clip(out.join("\n"));
 }
