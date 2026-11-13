@@ -147,7 +147,7 @@ for (const [name, args, pred] of cases) {
   const r = await tool("viranomaistiedotteet", { viranomainen: "hyvinvointialueet", enintaan: 60 });
   const shorts = Object.values(HVA_FEEDS).map((f) => f.short);
   const missing = shorts.filter((s) => !r.text.includes(`${s} `));
-  check(!r.isError && !missing.length && !r.text.includes("HUOM") && r.text.includes("puuttuvat Pohjois-Savo") && r.text.includes("Lähteet, hyvinvointialueet:") && !r.text.includes("· Fimea ·"), `viranomaistiedotteet hyvinvointialueet: kaikki ${shorts.length} syötettä (${Date.now() - t0} ms)`);
+  check(!r.isError && !missing.length && !r.text.includes("HUOM") && r.text.includes("puuttuvat Keski-Pohjanmaa") && !r.text.includes("Pohjois-Savo (") && r.text.includes("Lähteet, hyvinvointialueet:") && !r.text.includes("· Fimea ·"), `viranomaistiedotteet hyvinvointialueet: kaikki ${shorts.length} syötettä (${Date.now() - t0} ms)`);
   if (show || missing.length) console.log("Puuttuvat:", missing, r.text.slice(0, 2500), "\n------");
 }
 {
@@ -159,6 +159,30 @@ for (const [name, args, pred] of cases) {
   check(v.isError && v.text.includes("hyvinvointialueet"), "viranomaistiedotteet: tuntematon tunnus hylätään");
   const k = await tool("viranomaistiedotteet", { viranomainen: "kaikki", enintaan: 5 });
   check(!k.isError && k.text.includes("Fimea ") && k.text.includes("HVA Kainuu "), "viranomaistiedotteet kaikki: valtion viranomaiset ja hyvinvointialueet");
+}
+// Pohjois-Savo (lisätty 13.11.2026): Liferayn syöte, linkeistä redirect-parametri pois, tekstin rajaus
+// sivun pshva_topic-page-osiosta ja yhteystietojen poisto.
+{
+  const items = await feedItems("pohjois_savo");
+  check(items.length >= 20 && items.every((i) => i.title && i.date && /^https:\/\/pshyvinvointialue\.fi\/fi\/w\/[^?]+$/.test(i.link)), `Pohjois-Savo: syöte vastaa (${items.length} tiedotetta, otsikot, päivät, linkit ilman redirect-parametria)`);
+  if (show) console.log(items.slice(0, 5).map((i) => `${i.date.slice(0, 10)} ${i.title}`).join("\n"));
+  const a = await tool("viranomaistiedotteet", { viranomainen: "pshva", enintaan: 3 });
+  check(!a.isError && a.text.includes("HVA Pohjois-Savo ") && !a.text.includes("puuttuvat"), "viranomaistiedotteet: Pohjois-Savo aliaksella pshva");
+  const LASKUT = "https://pshyvinvointialue.fi/fi/w/kysin-ja-muun-erikoissairaanhoidon-laskut-saapuvat-loppuvuodesta-tavallista-myohemmin";
+  const r = await tool("viranomaistiedote", { osoite: LASKUT });
+  const body = r.text.split("\nLähde:")[0];
+  check(
+    !r.isError && r.text.includes("KYSin ja muun erikoissairaanhoidon laskut saapuvat loppuvuodesta tavallista myöhemmin") && r.text.includes("10.11.2026") &&
+      r.text.includes("Pohjois-Savon hyvinvointialue") && body.includes("Pohjois-Savon hyvinvointialueen erikoissairaanhoidon asiakaslaskut saapuvat") &&
+      body.includes("Viive ei vaadi asiakkaalta toimenpiteitä") && /korjaa laskutuksen tarvittaessa\.\s*$/.test(body) &&
+      !/Navigaatio|Hyppää sisältöön|pshvaListTitle|Uutinen\n|Pikalinkit/.test(body),
+    `viranomaistiedote Pohjois-Savo: teksti rajautuu tiedotteeseen (${body.length} merkkiä)`,
+  );
+  if (show) console.log(r.text.slice(0, 1200), "\n------");
+  const k = await tool("viranomaistiedote", { osoite: "https://pshyvinvointialue.fi/fi/w/polulla-kotiin-hanke-on-kohdannut-jo-100-asunnotonta-kuopiossa" });
+  check(!k.isError && k.text.includes("Asunnottomien yö") && !/Lisätiedot:|@pshyvinvointialue|0447183442/.test(k.text), "viranomaistiedote Pohjois-Savo: Lisätiedot-osion yhteystiedot pois");
+  const t = await tool("viranomaistiedote", { osoite: "https://pshyvinvointialue.fi/fi/w/tue-lasta-tai-nuorta-hae-tukihenkiloksi-" });
+  check(!t.isError && t.text.includes("Viimeinen ilmoittautumispäivä on 23.11.2026.") && !/puhelin 044|@pshyvinvointialue|Lisätietoja ja ilmoittautuminen/.test(t.text), "viranomaistiedote Pohjois-Savo: yhteystiedot pois, niiden jälkeinen rivi jää");
 }
 for (const key of [...Object.keys(HVA_FEEDS).filter((k) => HVA_FEEDS[k].page), "hus", "pirkanmaa"]) {
   const items = await feedItems(key);
@@ -283,5 +307,5 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.15.1" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.16.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }

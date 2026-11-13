@@ -362,11 +362,11 @@ export const TOOLS = [
   {
     name: "viranomaistiedotteet",
     description:
-      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Pohjois-Savoa, Keski-Pohjanmaata eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
+      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Keski-Pohjanmaata eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
     inputSchema: {
       type: "object",
       properties: {
-        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet, tietosuoja, kyber, kkv; hyvinvointialue: hyvinvointialueet (kaikki), hus, helsinki, ita_uusimaa, keski_uusimaa, lansi_uusimaa, vantaa_kerava, varsinais_suomi, satakunta, kanta_hame, pirkanmaa, paijat_hame, kymenlaakso, etela_karjala, etela_savo, pohjois_karjala, keski_suomi, etela_pohjanmaa, pohjanmaa, keski_pohjanmaa, pohjois_pohjanmaa, kainuu. Oletus: valtion viranomaiset ilman hyvinvointialueita; kaikki = myös hyvinvointialueet. Useita pilkulla erotettuna." },
+        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet, tietosuoja, kyber, kkv; hyvinvointialue: hyvinvointialueet (kaikki), hus, helsinki, ita_uusimaa, keski_uusimaa, lansi_uusimaa, vantaa_kerava, varsinais_suomi, satakunta, kanta_hame, pirkanmaa, paijat_hame, kymenlaakso, etela_karjala, etela_savo, pohjois_savo, pohjois_karjala, keski_suomi, etela_pohjanmaa, pohjanmaa, keski_pohjanmaa, pohjois_pohjanmaa, kainuu. Oletus: valtion viranomaiset ilman hyvinvointialueita; kaikki = myös hyvinvointialueet. Useita pilkulla erotettuna." },
         hakusana: { type: "string", description: "Sana otsikosta tai tiivistelmästä, esim. \"kosmet\" tai \"arvonlisävero\". Valinnainen." },
         alkaen: { type: "string", description: "Tiedotteet alkaen (vvvv-kk-pp). Valinnainen." },
         enintaan: { type: "integer", description: "Montako näytetään (oletus 20, enintään 60)." },
@@ -1932,7 +1932,7 @@ const TIEDOTE_TEXT_MAX = 15_000;
 
 const FEED_ALIASES = {
   hva: "hyvinvointialueet", hyvinvointialue: "hyvinvointialueet", varha: "varsinais_suomi", pohde: "pohjois_pohjanmaa", keusote: "keski_uusimaa",
-  oma_hame: "kanta_hame", siun_sote: "pohjois_karjala", siunsote: "pohjois_karjala", soite: "keski_pohjanmaa", eloisa: "etela_savo",
+  oma_hame: "kanta_hame", siun_sote: "pohjois_karjala", siunsote: "pohjois_karjala", soite: "keski_pohjanmaa", eloisa: "etela_savo", pshva: "pohjois_savo", pohjois_savon_hyvinvointialue: "pohjois_savo",
   ekhva: "etela_karjala", hyvaep: "etela_pohjanmaa", helsingin_sote: "helsinki", vakehyva: "vantaa_kerava", hus_yhtyma: "hus",
 };
 const normFeedKey = (s) => s.trim().toLowerCase().replace(/[äå]/g, "a").replace(/ö/g, "o").replace(/[-\s]+/g, "_");
@@ -1952,7 +1952,7 @@ function feedKeys(arg) {
     const k = FEED_ALIASES[p] ?? p;
     if (k === "kaikki") keys.push(...national, ...hva);
     else if (k === "hyvinvointialueet") keys.push(...hva);
-    else if (/^(pohjois_savo|lappi|lapin_hyvinvointialue|pohjois_savon_hyvinvointialue|keski_pohjanmaa|soite|keski_pohjanmaan_hyvinvointialue)$/.test(k)) throw new UserError(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}. Katso tiedotteet alueen omilta sivuilta.`);
+    else if (/^(lappi|lapin_hyvinvointialue|keski_pohjanmaa|soite|keski_pohjanmaan_hyvinvointialue)$/.test(k)) throw new UserError(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}. Katso tiedotteet alueen omilta sivuilta.`);
     else if (FEEDS[k]) keys.push(k);
     else throw new UserError(`viranomainen: ${national.join(", ")}, hyvinvointialueet, ${hva.join(", ")} tai kaikki.`);
   }
