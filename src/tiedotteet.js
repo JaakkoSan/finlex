@@ -298,7 +298,7 @@ export async function itemText(url) {
   }
   const hva = u.protocol === "https:" ? hvaKeyOf(u) : null;
   if (u.protocol !== "https:" || (!TEXT_HOSTS.has(u.hostname) && !hva)) return null;
-  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_tiedote=3`;
+  const key = `${u.href}${u.href.includes("?") ? "&" : "?"}_tiedote=4`;
   const hit = await cacheGetJson(key);
   if (hit) return hit;
   const html = await get(u.href, 0);
