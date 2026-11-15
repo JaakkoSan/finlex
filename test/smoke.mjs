@@ -34,6 +34,11 @@ function check(cond, label) {
 
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
+// Palvelinohje alle 4 000 merkkiä: Claude-asiakkaat katkaisevat ohjeen noin 4 096 merkin kohdalta (v1.16.2).
+{
+  const ins = init.result?.instructions ?? "";
+  check(ins.length > 0 && ins.length < 4000, `palvelinohje ${ins.length} merkkiä (< 4000)`);
+}
 const list = await rpc("tools/list", {});
 check(list.result?.tools?.length === 32, "tools/list (32 työkalua)");
 
@@ -281,7 +286,7 @@ const menCases = [
   ["hae_men_lausuntoja", { ratkaisu: "vapauttava", vuosi: 2026 }, (t) => t.includes("ratkaisu vapauttava, vuosi 2026") && t.includes("MEN 44/2026 Sinituote Oy") && !t.includes("· huomautus") && !/MEN \d+\/2025/.test(t)],
   ["hae_men_lausuntoja", { ratkaisu: "ei toimivaltaa" }, (t) => t.includes("· ei toimivaltaa") && !t.includes("· vapauttava")],
   ["hae_men_lausuntoja", { artikla: "C2", vuosi: 2026 }, (t) => t.includes("artikla C2 Markkinoinnin tunnistettavuus") && t.includes("C2 Markkinoinnin tunnistettavuus") && t.includes("MEN 43/2026")],
-  ["hae_men_lausuntoja", { artikla: "18", media: "sovellus", alkaen_vuosi: 2025 }, (t) => t.includes("18 Lapset ja nuoret tai 18 Todistus ja suositus") && t.includes("media sovellus")],
+  ["hae_men_lausuntoja", { artikla: "18", media: "sovellus", alkaen_vuosi: 2025 }, (t) => t.includes("18 Lapset ja nuoret") && t.includes("18 Todistus ja suositus") && t.includes("media sovellus")],
   ["hae_men_lausuntoja", { artikla: "olematon" }, (t) => t.includes("ei löytynyt") && t.includes("7 artikla - Markkinoinnin tunnistettavuus")],
   ["men_lausunto", { tunnus: "MEN 43/2026" }, (t) => t.startsWith("MEN 43/2026 Soluni Oy") && t.includes("Ratkaisu: huomautus") && t.includes("Tiivistelmä: Väkivaltaan viittaavia") && t.includes("- Markkinoija: Soluni Oy") && t.includes("- Päätös: Huomautus") && t.includes("- Asiasanat: PIILOMAINONTA") && t.includes("Lohkot: Lausuntopyyntö | Markkinointi") && t.includes("\nAsian arviointi\nMainonnan eettinen neuvosto toteaa") && !t.includes("Markkinoijan mukaan lapseen") && !t.includes("Paula Paloranta") && !t.includes("Asian käsittelyyn") && t.includes("ei ole sitova eikä viranomaispäätös") && t.includes("ota kantaa lainvastaisuuteen") && t.includes("kuluttajansuojalain") && t.includes("Koko teksti on lähteen sivulla: https://kauppakamari.fi/men-43-2026-soluni-oy/") && t.includes(`Lähde: https://kauppakamari.fi/men-43-2026-soluni-oy/ ${MEN_SRC}`)],
   ["men_lausunto", { tunnus: "MEN lausunto 1/2001" }, (t) => t.startsWith("MEN lausunto 1/2001") && t.includes("- Mainostaja: Luottokunta, Helsinki") && t.includes("Mainonnan eettisen neuvoston lausunto\nMainonnan eettinen neuvosto toteaa") && !t.includes("Outi Antila") && t.includes("Lähde: https://kauppakamari.fi/men-lausunto-1-2001/")],
@@ -333,5 +338,5 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.1" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.16.2" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }

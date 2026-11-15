@@ -106,7 +106,7 @@ export const TOOLS = [
   {
     name: "hae_pykala",
     description:
-      "Palauttaa pykälän tai koko luvun sanatarkan tekstin Finlexistä momentteineen ja kohtineen sekä Finlexin huomautukset (esim. muutosten voimaantulo ja aiempi sanamuoto). Anna pykälä (esim. \"3\", \"3 a\") ja tarvittaessa luku, jos laissa pykälänumerointi alkaa joka luvussa alusta (esim. osakeyhtiölaki: luku \"13\", pykälä \"2\"). Pelkällä luvulla palautetaan koko luku.",
+      "Palauttaa pykälän tai koko luvun sanatarkan tekstin Finlexistä momentteineen ja kohtineen sekä Finlexin huomautukset (esim. muutosten voimaantulo ja aiempi sanamuoto). Anna pykälä (esim. \"3\", \"3 a\") ja tarvittaessa luku, jos laissa pykälänumerointi alkaa joka luvussa alusta (esim. osakeyhtiölaki: luku \"13\", pykälä \"2\"). Pelkällä luvulla palautetaan koko luku. Kerro säädöksen nimi ja numero, pykälä ja momentti sekä Lähde-linkki ja se, onko teksti ajantasainen vai alkuperäinen ja mihin muutokseen asti se on ajantasaistettu. Jos tulosteessa on HUOM-merkintä tulevasta voimaantulosta tai useampi sanamuoto, kerro se käyttäjälle.",
     inputSchema: {
       type: "object",
       properties: {
@@ -141,7 +141,7 @@ export const TOOLS = [
   {
     name: "hae_ratkaisuja",
     description:
-      "Hakee Finlexistä viranomaisratkaisuja: tietosuojavaltuutettu, eduskunnan oikeusasiamies tai oikeuskansleri. Haku otsikon osalla, asiasanalla ja/tai vuosilla. Palauttaa ratkaisujen numerot, päivämäärät ja otsikot. Tuomioistuinten (KKO, KHO) ratkaisuja Finlexin avoimessa datassa ei ole.",
+      "Hakee Finlexistä viranomaisratkaisuja: tietosuojavaltuutettu, eduskunnan oikeusasiamies tai oikeuskansleri. Haku otsikon osalla, asiasanalla ja/tai vuosilla. Palauttaa ratkaisujen numerot, päivämäärät ja otsikot. Tuomioistuinten (KKO, KHO) ratkaisuja Finlexin avoimessa datassa ei ole. Ratkaisut ovat tapauskohtaisia kannanottoja, eivät lakia.",
     inputSchema: {
       type: "object",
       properties: {
@@ -162,7 +162,7 @@ export const TOOLS = [
   {
     name: "hae_ratkaisu",
     description:
-      "Palauttaa yhden viranomaisratkaisun (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) tiedot ja tekstin: päivämäärä, diaarinumero, ratkaisija, asiasanat ja koko teksti. Jos ratkaisu on Finlexissä vain PDF:nä, teksti puretaan PDF:stä.",
+      "Palauttaa yhden viranomaisratkaisun (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) tiedot ja tekstin: päivämäärä, diaarinumero, ratkaisija, asiasanat ja koko teksti. Jos ratkaisu on Finlexissä vain PDF:nä, teksti puretaan PDF:stä. Kerro ratkaisun päivämäärä, diaarinumero ja Lähde-linkki. Ratkaisut ovat tapauskohtaisia kannanottoja, eivät lakia.",
     inputSchema: {
       type: "object",
       properties: {
@@ -194,7 +194,7 @@ export const TOOLS = [
   {
     name: "hallituksen_esitys",
     description:
-      "Palauttaa hallituksen esityksen tekstiä Finlexistä. Ilman lisäparametreja: otsikko, antopäivä, ministeriö, esityksen pääasiallinen sisältö, perustelujen sisällysluettelo, lakiehdotukset ja liitteet. Parametrilla osa yksi perustelujen lohko (esim. \"7.1\" tai \"Nykytila\"), parametrilla pykala lakiehdotuksen pykälän säännöskohtaiset (yksityiskohtaiset) perustelut, parametrilla lakiehdotus lakiehdotuksen teksti ja parametrilla liite liitteen teksti (esim. rinnakkaisteksti tai asetusluonnos).",
+      "Palauttaa hallituksen esityksen tekstiä Finlexistä. Ilman lisäparametreja: otsikko, antopäivä, ministeriö, esityksen pääasiallinen sisältö, perustelujen sisällysluettelo, lakiehdotukset ja liitteet. Parametrilla osa yksi perustelujen lohko (esim. \"7.1\" tai \"Nykytila\"), parametrilla pykala lakiehdotuksen pykälän säännöskohtaiset (yksityiskohtaiset) perustelut, parametrilla lakiehdotus lakiehdotuksen teksti ja parametrilla liite liitteen teksti (esim. rinnakkaisteksti tai asetusluonnos). Kerro esityksen tunnus (HE numero/vuosi), lohko ja Lähde-linkki. Perustelut ovat lain esitöitä, eivät lakia; eduskunta on voinut muuttaa ehdotusta, joten tarkista voimassa oleva teksti hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -211,7 +211,7 @@ export const TOOLS = [
   {
     name: "etsi_hallituksen_esityksesta",
     description:
-      "Etsii yhden hallituksen esityksen tekstistä (pääasiallinen sisältö, perustelut ja lakiehdotukset) sanaa tai sanontaa ja palauttaa osumat lohkoittain lyhyine otteineen. Hae sen jälkeen koko lohko hallituksen_esitys-työkalun osa-parametrilla. Haku on kirjaimellinen: käytä sanan vartaloa.",
+      "Etsii yhden hallituksen esityksen tekstistä (pääasiallinen sisältö, perustelut ja lakiehdotukset) sanaa tai sanontaa ja palauttaa osumat lohkoittain lyhyine otteineen. Hae sen jälkeen koko lohko hallituksen_esitys-työkalun osa-parametrilla. Haku on kirjaimellinen: käytä sanan vartaloa. Perustelut ovat lain esitöitä, eivät lakia.",
     inputSchema: {
       type: "object",
       properties: {
@@ -225,7 +225,7 @@ export const TOOLS = [
   {
     name: "eduskuntakasittely",
     description:
-      "Palauttaa asian (esim. hallituksen esitys) käsittelyn eduskunnassa: tila ja lopputulos, valiokunnan mietintö ja lausunnot (esim. perustuslakivaliokunnan lausunto), eduskunnan vastaus, lakiehdotusten päätökset (hyväksytty, hyväksytty muutettuna, hylätty), vahvistettujen lakien säädösnumerot sekä käsittelyn vaiheet päivämäärineen (lähetekeskustelu, valiokunnat, vastalauseet, ensimmäinen ja toinen käsittely). Lähde: Eduskunnan avoin data.",
+      "Palauttaa asian (esim. hallituksen esitys) käsittelyn eduskunnassa: tila ja lopputulos, valiokunnan mietintö ja lausunnot (esim. perustuslakivaliokunnan lausunto), eduskunnan vastaus, lakiehdotusten päätökset (hyväksytty, hyväksytty muutettuna, hylätty), vahvistettujen lakien säädösnumerot sekä käsittelyn vaiheet päivämäärineen (lähetekeskustelu, valiokunnat, vastalauseet, ensimmäinen ja toinen käsittely). Lähde: Eduskunnan avoin data. Lue mietinnön, lausunnon tai eduskunnan vastauksen teksti eduskunnan_asiakirja-työkalulla. Kerro asiakirjan tunnus ja Lähde-linkki.",
     inputSchema: {
       type: "object",
       properties: {
@@ -238,7 +238,7 @@ export const TOOLS = [
   {
     name: "eduskunnan_asiakirja",
     description:
-      "Palauttaa valiokunnan mietinnön tai lausunnon (esim. StVM 21/2022 vp, PeVL 38/2022 vp) tai eduskunnan vastauksen (EV) tekstiä. Ilman lisäparametreja: perustiedot, sisällys, päätösehdotus tai lausunnon kannanotto sekä pykälät, joita valiokunta perustelee tai muuttaa. Parametrilla pykala valiokunnan perustelut ja ehdotettu tai hyväksytty sanamuoto pykälälle, parametrilla osa yksi lohko ja parametrilla hakusana osumat tekstistä. Vuotta 1999 vanhemmista asiakirjoista ei ole tekstiä.",
+      "Palauttaa valiokunnan mietinnön tai lausunnon (esim. StVM 21/2022 vp, PeVL 38/2022 vp) tai eduskunnan vastauksen (EV) tekstiä. Ilman lisäparametreja: perustiedot, sisällys, päätösehdotus tai lausunnon kannanotto sekä pykälät, joita valiokunta perustelee tai muuttaa. Parametrilla pykala valiokunnan perustelut ja ehdotettu tai hyväksytty sanamuoto pykälälle, parametrilla osa yksi lohko ja parametrilla hakusana osumat tekstistä. Vuotta 1999 vanhemmista asiakirjoista ei ole tekstiä. Kerro asiakirjan tunnus (esim. PeVL 38/2022 vp, StVM 21/2022 vp), lohko ja Lähde-linkki. Valiokunnan mietintö ja perustuslakivaliokunnan lausunto ovat lain esitöitä, eivät lakia; eduskunnan vastauksen lakiteksti on eduskunnan hyväksymä sanamuoto ennen vahvistamista, joten tarkista voimassa oleva teksti hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -272,7 +272,7 @@ export const TOOLS = [
   {
     name: "eduskunnan_aanestykset",
     description:
-      "Eduskunnan täysistunnon äänestykset: tulos (jaa, ei, tyhjiä, poissa), hallitus- ja oppositioryhmien ja eduskuntaryhmien jakaumat, ryhmänsä enemmistöstä poikenneet edustajat sekä yksittäisen edustajan ääni. Hakutavat: aanestys (tunnus, esim. 2026-104-1), asia (esim. HE 151/2026 vp, kaikki asian äänestykset), tai hakusana, edustaja ja aikaväli.",
+      "Eduskunnan täysistunnon äänestykset: tulos (jaa, ei, tyhjiä, poissa), hallitus- ja oppositioryhmien ja eduskuntaryhmien jakaumat, ryhmänsä enemmistöstä poikenneet edustajat sekä yksittäisen edustajan ääni. Hakutavat: aanestys (tunnus, esim. 2026-104-1), asia (esim. HE 151/2026 vp, kaikki asian äänestykset), tai hakusana, edustaja ja aikaväli. Kerro äänestyksen tunnus ja päivä, mistä äänestettiin (JAA- ja EI-vaihtoehto), tulos ja ryhmien jakauma. Äänestys koskee juuri otsikossa nimettyä vaihtoehtoparia, esimerkiksi mietintöä vastaan vastalauseen ehdotusta; älä esitä sitä lain lopullisena hyväksymisenä, ellei otsikko ole lakiehdotuksen hyväksyminen. Poissa ei tarkoita kantaa.",
     inputSchema: {
       type: "object",
       properties: {
@@ -291,7 +291,7 @@ export const TOOLS = [
   {
     name: "kirjallinen_kysymys",
     description:
-      "Kansanedustajan kirjallinen kysymys ministerille ja ministerin vastaus: kysyjä ja eduskuntaryhmä, päivät, tila, kysymyksen teksti ja vastauksen teksti (vastaukset ovat usein vain PDF:nä, jolloin teksti puretaan PDF:stä). Kysymyksiä haetaan hae_eduskunnan_asiakirjoja-työkalulla (tyyppi kysymys).",
+      "Kansanedustajan kirjallinen kysymys ministerille ja ministerin vastaus: kysyjä ja eduskuntaryhmä, päivät, tila, kysymyksen teksti ja vastauksen teksti (vastaukset ovat usein vain PDF:nä, jolloin teksti puretaan PDF:stä). Kysymyksiä haetaan hae_eduskunnan_asiakirjoja-työkalulla (tyyppi kysymys). Kerro kysymyksen tunnus (esim. KK 365/2026 vp), kysyjä, päivät ja Lähde-linkki. Vastaus on ministerin kanta, ei lakia.",
     inputSchema: {
       type: "object",
       properties: {
@@ -304,7 +304,7 @@ export const TOOLS = [
   {
     name: "hae_tyoehtosopimuksia",
     description:
-      "Hakee yleissitoviksi vahvistettuja työehtosopimuksia Finlexistä (työehtosopimuksen yleissitovuuden vahvistamislautakunnan päätökset): sopimuksen nimi, työnantaja- ja työntekijäliitot, voimassa oleva sopimuskausi. Ilman hakusanaa listaa kaikki yleissitovat sopimukset. Palauttaa tunnisteen (esim. 2020/19), jolla sopimuksen teksti haetaan tyoehtosopimus-työkalulla.",
+      "Hakee yleissitoviksi vahvistettuja työehtosopimuksia Finlexistä (työehtosopimuksen yleissitovuuden vahvistamislautakunnan päätökset): sopimuksen nimi, työnantaja- ja työntekijäliitot, voimassa oleva sopimuskausi. Ilman hakusanaa listaa kaikki yleissitovat sopimukset. Palauttaa tunnisteen (esim. 2020/19), jolla sopimuksen teksti haetaan tyoehtosopimus-työkalulla. Jos uusin sopimus ei ole vielä Finlexissä, kerro se.",
     inputSchema: {
       type: "object",
       properties: {
@@ -316,7 +316,7 @@ export const TOOLS = [
   {
     name: "tyoehtosopimus",
     description:
-      "Palauttaa yleissitovan työehtosopimuksen tiedot ja tekstiä Finlexistä: sopijaosapuolet, yleissitovuuspäätös ja soveltamisala, sopimusversiot voimassaoloaikoineen ja sopimuksen sisällysluettelo. Parametrilla pykala yksittäinen pykälä (esim. palkat, työaika, lisät, vuosiloma), hakusanalla osumat ja sivut-parametrilla sivualue. Oletuksena käytetään tänään voimassa olevaa sopimusversiota. Teksti puretaan sopimuksen PDF:stä.",
+      "Palauttaa yleissitovan työehtosopimuksen tiedot ja tekstiä Finlexistä: sopijaosapuolet, yleissitovuuspäätös ja soveltamisala, sopimusversiot voimassaoloaikoineen ja sopimuksen sisällysluettelo. Parametrilla pykala yksittäinen pykälä (esim. palkat, työaika, lisät, vuosiloma), hakusanalla osumat ja sivut-parametrilla sivualue. Oletuksena käytetään tänään voimassa olevaa sopimusversiota. Teksti puretaan sopimuksen PDF:stä. Kerro sopimuksen nimi, sopimuskausi, pykälä ja PDF:n sivu sekä Lähde-linkki. Yleissitovaa sopimusta on noudatettava vähintään myös järjestäytymättömän työnantajan työsuhteissa (työsopimuslaki 2 luku 7 §; tarkista teksti hae_pykala-työkalulla). Teksti on purettu PDF:stä, joten tarkista palkkataulukoiden luvut PDF:stä. Jos uusin sopimus ei ole vielä Finlexissä, kerro se.",
     inputSchema: {
       type: "object",
       properties: {
@@ -347,7 +347,7 @@ export const TOOLS = [
   {
     name: "viranomaismaarays",
     description:
-      "Palauttaa viranomaisen määräyksen tiedot ja tekstin Finlexistä: otsikko, viranomainen, määräystunnus, diaarinumero, antopäivä ja voimaantulo, asiasanat sekä teksti (PDF:stä purettuna). Pitkä teksti sivuittain (sivut) tai hakusanalla.",
+      "Palauttaa viranomaisen määräyksen tiedot ja tekstin Finlexistä: otsikko, viranomainen, määräystunnus, diaarinumero, antopäivä ja voimaantulo, asiasanat sekä teksti (PDF:stä purettuna). Pitkä teksti sivuittain (sivut) tai hakusanalla. Kerro viranomainen, määräystunnus (esim. 1/2024), voimaantulo ja Lähde-linkki; voimassaolo kannattaa tarkistaa viranomaiselta.",
     inputSchema: {
       type: "object",
       properties: {
@@ -362,7 +362,7 @@ export const TOOLS = [
   {
     name: "viranomaistiedotteet",
     description:
-      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Keski-Pohjanmaata eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet.",
+      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Keski-Pohjanmaata eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet. Kerro viranomainen, päivä, otsikko ja linkki. Tiedote on viranomaisen viestintää, ei säädös; tarkista määräykset ja lait niiden omilla työkaluilla. Tiedotteen tekstin saa viranomaistiedote-työkalulla, ei kuitenkaan Fimean eikä Tukesin tiedotteista.",
     inputSchema: {
       type: "object",
       properties: {
@@ -376,7 +376,7 @@ export const TOOLS = [
   {
     name: "viranomaistiedote",
     description:
-      "Palauttaa Verohallinnon, Lupa- ja valvontaviraston, tietosuojavaltuutetun, Kyberturvallisuuskeskuksen, KKV:n tai hyvinvointialueen tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen.",
+      "Palauttaa Verohallinnon, Lupa- ja valvontaviraston, tietosuojavaltuutetun, Kyberturvallisuuskeskuksen, KKV:n tai hyvinvointialueen tiedotteen tekstin osoitteella. Syventävästä vero-ohjeesta (myös Verohallinnon päätös, kannanotto tai KVL:n ennakkoratkaisu) ilman lisäparametreja: diaarinumero, voimassaolo, muutokset ja sisällysluettelo (lyhyestä ohjeesta koko teksti). Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"3.7.3\" tai \"Poistot\"), parametrilla hakusana osumat luvuittain otteineen. Tiedotteesta kerro viranomainen, päivä, otsikko ja linkki; tiedote on viranomaisen viestintää, ei säädös, joten tarkista määräykset ja lait niiden omilla työkaluilla. Vero-ohjeesta kerro ohjeen nimi, diaarinumero, voimassaolo, luku ja linkki; ohje on Verohallinnon tulkinta, ei lakia. Tarkista lainkohdat hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -390,7 +390,7 @@ export const TOOLS = [
   {
     name: "hae_vero_ohjeita",
     description:
-      "Hakee Verohallinnon syventäviä vero-ohjeita (sekä halutessa Verohallinnon päätöksiä, kannanottoja ja keskusverolautakunnan ennakkoratkaisuja) koko arkistosta otsikon ja tekstin sanoilla vero.fi:n hakurajapinnasta tai diaarinumerolla (myös korvatut versiot). Palauttaa otsikon, päivän, osoitteen ja otteen. Lue ohje tai sen luku viranomaistiedote-työkalulla (osoite, luku, hakusana).",
+      "Hakee Verohallinnon syventäviä vero-ohjeita (sekä halutessa Verohallinnon päätöksiä, kannanottoja ja keskusverolautakunnan ennakkoratkaisuja) koko arkistosta otsikon ja tekstin sanoilla vero.fi:n hakurajapinnasta tai diaarinumerolla (myös korvatut versiot). Palauttaa otsikon, päivän, osoitteen ja otteen. Lue ohje tai sen luku viranomaistiedote-työkalulla (osoite, luku, hakusana). Ohje on Verohallinnon tulkinta, ei lakia. Tarkista lainkohdat hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -407,7 +407,7 @@ export const TOOLS = [
   {
     name: "hae_kila_lausuntoja",
     description:
-      "Hakee kirjanpitolautakunnan (KILA) lausuntoja ja poikkeuslupia (noin 940 kpl, 1974 alkaen) sekä yleisohjeita kirjanpitolautakunta.fi:stä sivuston omalla haulla: hakusana, lausunnon numero, vuosi tai vuodesta vuoteen, tyyppi ja yleisohjeiden voimassaolo. Palauttaa numeron (esim. 1998/1516), päivän, otsikon ja osoitteen. Lue asiakirja kila_lausunto-työkalulla. Sivuston haku painottuu otsikkoon ja asiasanoihin, joten kokeile tarvittaessa useampaa sanaa.",
+      "Hakee kirjanpitolautakunnan (KILA) lausuntoja ja poikkeuslupia (noin 940 kpl, 1974 alkaen) sekä yleisohjeita kirjanpitolautakunta.fi:stä sivuston omalla haulla: hakusana, lausunnon numero, vuosi tai vuodesta vuoteen, tyyppi ja yleisohjeiden voimassaolo. Palauttaa numeron (esim. 1998/1516), päivän, otsikon ja osoitteen. Lue asiakirja kila_lausunto-työkalulla. Sivuston haku painottuu otsikkoon ja asiasanoihin, joten kokeile tarvittaessa useampaa sanaa. Lausunto koskee hakijan kuvaamaa tapausta ja antamisajan säännöksiä, poikkeuslupa vain hakijaa; yleisohje on ohje hyvästä kirjanpitotavasta, ei lakia.",
     inputSchema: {
       type: "object",
       properties: {
@@ -425,7 +425,7 @@ export const TOOLS = [
   {
     name: "kila_lausunto",
     description:
-      "Palauttaa kirjanpitolautakunnan lausunnon, poikkeusluvan tai yleisohjeen sanatarkan tekstin kirjanpitolautakunta.fi:stä numerolla (lausunto, esim. \"1998/1516\") tai osoitteella. Lausunnosta koko teksti lukunumeroineen (hakemus, perustelut, lausunto). Yleisohjeesta (teksti PDF:stä) ilman lisäparametreja sisällysluettelo ja liitteiden luettelo; parametrilla luku yksi luku alalukuineen (esim. \"2.4\" tai \"Jäännösarvo\"), parametrilla hakusana osumat luvuittain ja parametrilla liite liitteen teksti (esim. \"1\" tai \"3a\").",
+      "Palauttaa kirjanpitolautakunnan lausunnon, poikkeusluvan tai yleisohjeen sanatarkan tekstin kirjanpitolautakunta.fi:stä numerolla (lausunto, esim. \"1998/1516\") tai osoitteella. Lausunnosta koko teksti lukunumeroineen (hakemus, perustelut, lausunto). Yleisohjeesta (teksti PDF:stä) ilman lisäparametreja sisällysluettelo ja liitteiden luettelo; parametrilla luku yksi luku alalukuineen (esim. \"2.4\" tai \"Jäännösarvo\"), parametrilla hakusana osumat luvuittain ja parametrilla liite liitteen teksti (esim. \"1\" tai \"3a\"). Hae yleisohjeen liite vain pyydettäessä. Kerro lausunnon numero ja päivä tai yleisohjeen nimi ja päivä, luku ja Lähde-linkki. Lausunto koskee hakijan kuvaamaa tapausta ja antamisajan säännöksiä, poikkeuslupa vain hakijaa; yleisohje on ohje hyvästä kirjanpitotavasta, ei lakia. Tarkista kirjanpitolain kohdat hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -440,7 +440,7 @@ export const TOOLS = [
   {
     name: "hae_kril_ratkaisuja",
     description:
-      "Hakee Kuluttajariitalautakunnan ratkaisuja (noin 1 290 kpl, julkaistu 2000 alkaen) kuluttajariita.fi:stä: hakusana (otsikko ja teksti), teema (esim. \"Muut palvelut\", \"Etämyynti\", \"Terveydenhoitopalvelut\", \"Tavarat\"), julkaisuvuodet. Palauttaa otsikon, julkaisupäivän, teeman ja tunnuksen, 10 kerrallaan uusimmasta alkaen. Lue ratkaisu kril_ratkaisu-työkalulla. Ilman parametreja palauttaa teemat ja niiden ratkaisumäärät.",
+      "Hakee Kuluttajariitalautakunnan ratkaisuja (noin 1 290 kpl, julkaistu 2000 alkaen) kuluttajariita.fi:stä: hakusana (otsikko ja teksti), teema (esim. \"Muut palvelut\", \"Etämyynti\", \"Terveydenhoitopalvelut\", \"Tavarat\"), julkaisuvuodet. Palauttaa otsikon, julkaisupäivän, teeman ja tunnuksen, 10 kerrallaan uusimmasta alkaen. Lue ratkaisu kril_ratkaisu-työkalulla. Ilman parametreja palauttaa teemat ja niiden ratkaisumäärät. Ratkaisu on suositus yksittäisessä tapauksessa, ei sitova.",
     inputSchema: {
       type: "object",
       properties: {
@@ -456,7 +456,7 @@ export const TOOLS = [
   {
     name: "kril_ratkaisu",
     description:
-      "Palauttaa Kuluttajariitalautakunnan ratkaisun tekstin kuluttajariita.fi:stä tunnuksella tai osoitteella. Oletuksena yleiskuva: asiasanat, osien luettelo, asiaselostus, lautakunnan ratkaisu (suositus) ja lopputulos. Parametrilla osa yksi osa (esim. \"perustelut\", \"vaatimukset\", \"vastaus\") tai \"kaikki\"; parametrilla hakusana osumat otteineen osittain.",
+      "Palauttaa Kuluttajariitalautakunnan ratkaisun tekstin kuluttajariita.fi:stä tunnuksella tai osoitteella. Oletuksena yleiskuva: asiasanat, osien luettelo, asiaselostus, lautakunnan ratkaisu (suositus) ja lopputulos. Parametrilla osa yksi osa (esim. \"perustelut\", \"vaatimukset\", \"vastaus\") tai \"kaikki\"; parametrilla hakusana osumat otteineen osittain. Kerro ratkaisun otsikko, julkaisupäivä, lautakunnan suositus ja Lähde-linkki. Ratkaisu on suositus yksittäisessä tapauksessa, ei sitova. Tarkista lainkohdat hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -470,7 +470,7 @@ export const TOOLS = [
   {
     name: "hae_men_lausuntoja",
     description:
-      "Hakee Mainonnan eettisen neuvoston (MEN, Keskuskauppakamari) lausuntoja (noin 900 kpl, 2001 alkaen) kauppakamari.fi:stä: hakusana (otsikko ja teksti), ratkaisu (huomautus, vapauttava, ei toimivaltaa), ICC:n markkinointisääntöjen artikla, media ja lausunnon vuodet. Palauttaa numeron ja markkinoijan, julkaisupäivän, ratkaisun, artiklat, tiivistelmän ja tunnuksen, 10 kerrallaan uusimmasta alkaen. Lue lausunto men_lausunto-työkalulla. Ilman parametreja palauttaa ratkaisujen, artiklojen ja medioiden määrät.",
+      "Hakee Mainonnan eettisen neuvoston (MEN, Keskuskauppakamari) lausuntoja (noin 900 kpl, 2001 alkaen) kauppakamari.fi:stä: hakusana (otsikko ja teksti), ratkaisu (huomautus, vapauttava, ei toimivaltaa), ICC:n markkinointisääntöjen artikla, media ja lausunnon vuodet. Palauttaa numeron ja markkinoijan, julkaisupäivän, ratkaisun, artiklat, tiivistelmän ja tunnuksen, 10 kerrallaan uusimmasta alkaen. Lue lausunto men_lausunto-työkalulla. Ilman parametreja palauttaa ratkaisujen, artiklojen ja medioiden määrät. Lausunto on suositusluonteinen kannanotto, ei sitova eikä viranomaispäätös. Markkinoijina voi olla yksityishenkilöitä ja vaikuttajia: esitä nimistä vain kysymyksen kannalta tarpeellinen.",
     inputSchema: {
       type: "object",
       properties: {
@@ -488,7 +488,7 @@ export const TOOLS = [
   {
     name: "men_lausunto",
     description:
-      "Palauttaa lainauksen Mainonnan eettisen neuvoston lausunnosta kauppakamari.fi:stä numerolla (esim. \"MEN 43/2026\"), tunnuksella tai osoitteella. Oletuksena yleiskuva: tiivistelmä, tietorivit (asiasanat, artiklat, markkinoija, media, päätös), lohkojen luettelo ja asian arviointi. Parametrilla lohko yksi lohko (esim. \"lausuntopyyntö\", \"markkinointi\", \"markkinoijan vastaus\", \"arviointi\"), enintään noin 4 000 merkkiä; parametrilla hakusana osumat otteineen. Koko teksti on lähteen sivulla: älä kokoa koko lausuntoa lohko kerrallaan, vaan ohjaa koko tekstiin Lähde-linkillä.",
+      "Palauttaa lainauksen Mainonnan eettisen neuvoston lausunnosta kauppakamari.fi:stä numerolla (esim. \"MEN 43/2026\"), tunnuksella tai osoitteella. Oletuksena yleiskuva: tiivistelmä, tietorivit (asiasanat, artiklat, markkinoija, media, päätös), lohkojen luettelo ja asian arviointi. Parametrilla lohko yksi lohko (esim. \"lausuntopyyntö\", \"markkinointi\", \"markkinoijan vastaus\", \"arviointi\"), enintään noin 4 000 merkkiä; parametrilla hakusana osumat otteineen. Koko teksti on lähteen sivulla: älä kokoa koko lausuntoa lohko kerrallaan, vaan ohjaa koko tekstiin Lähde-linkillä. Kerro lausunnon numero, päivä, ratkaisu, artiklat ja Lähde-linkki. Lausunto on itsesääntelyelimen suositusluonteinen kannanotto hyvästä markkinointitavasta, ei sitova eikä viranomaispäätös, eikä neuvosto ota kantaa lainvastaisuuteen; tarkista lait hae_pykala-työkalulla (esim. kuluttajansuojalaki 38/1978 2 luku). Markkinoijina voi olla yksityishenkilöitä ja vaikuttajia: esitä nimistä vain kysymyksen kannalta tarpeellinen.",
     inputSchema: {
       type: "object",
       properties: {
@@ -502,7 +502,7 @@ export const TOOLS = [
   {
     name: "hae_viranomaisohjeita",
     description:
-      "Hakee viranomaisten ohjeita ja linjauksia niiden verkkosivuilta: Traficom (Kyberturvallisuuskeskus: evästeet, sähköisen viestinnän tietoturva ja luottamuksellisuus, sähköinen tunnistaminen ja luottamuspalvelut, kyberturvallisuusohjeet ja -oppaat), tietosuojavaltuutettu (tietosuoja.fi:n ohjeet, esim. käsittelyperusteet, rekisteröidyn oikeudet, kameravalvonta, työelämä), KKV (kuluttaja-asiamiehen linjaukset ja ohjeistukset, kuluttaja-asioiden ohjeet, päätökset) ja PRH (kaupparekisteri, yhdistykset, säätiöt, tavaramerkit, patentit). Haku kohdistuu otsikkoon ja osoitteeseen (KKV:ssa sivujen otsikoihin WordPressin hakurajapinnalla ja päätöksissä osoitteeseen; KKV:n päätöksen voi hakea myös diaarinumerolla). Palauttaa otsikon ja osoitteen; lue ohje viranomaisohje-työkalulla.",
+      "Hakee viranomaisten ohjeita ja linjauksia niiden verkkosivuilta: Traficom (Kyberturvallisuuskeskus: evästeet, sähköisen viestinnän tietoturva ja luottamuksellisuus, sähköinen tunnistaminen ja luottamuspalvelut, kyberturvallisuusohjeet ja -oppaat), tietosuojavaltuutettu (tietosuoja.fi:n ohjeet, esim. käsittelyperusteet, rekisteröidyn oikeudet, kameravalvonta, työelämä), KKV (kuluttaja-asiamiehen linjaukset ja ohjeistukset, kuluttaja-asioiden ohjeet, päätökset) ja PRH (kaupparekisteri, yhdistykset, säätiöt, tavaramerkit, patentit). Haku kohdistuu otsikkoon ja osoitteeseen (KKV:ssa sivujen otsikoihin WordPressin hakurajapinnalla ja päätöksissä osoitteeseen; KKV:n päätöksen voi hakea myös diaarinumerolla). Palauttaa otsikon ja osoitteen; lue ohje viranomaisohje-työkalulla. Kokeile tarvittaessa useampaa sanaa. Traficomin määräykset haetaan hae_viranomaismaarayksia-työkalulla ja tietosuojavaltuutetun ratkaisut hae_ratkaisuja-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -516,7 +516,7 @@ export const TOOLS = [
   {
     name: "viranomaisohje",
     description:
-      "Palauttaa viranomaisen ohjeen tai päätöksen tekstin osoitteella (kyberturvallisuuskeskus.fi, tietosuoja.fi, kkv.fi tai prh.fi; myös näiden PDF-tiedostot). Ilman lisäparametreja: otsikko, tiedot (esim. KKV:n päätöksen päivämäärä ja diaarinumero), sisällysluettelo ja liitteet (PDF); lyhyestä ohjeesta koko teksti. Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"4.1\" tai otsikon sana), hakusanalla osumat luvuittain (PDF:ssä sivuittain) ja PDF:stä sivu-parametrilla sivualue.",
+      "Palauttaa viranomaisen ohjeen tai päätöksen tekstin osoitteella (kyberturvallisuuskeskus.fi, tietosuoja.fi, kkv.fi tai prh.fi; myös näiden PDF-tiedostot). Ilman lisäparametreja: otsikko, tiedot (esim. KKV:n päätöksen päivämäärä ja diaarinumero), sisällysluettelo ja liitteet (PDF); lyhyestä ohjeesta koko teksti. Parametrilla luku yksi luku alalukuineen sanatarkasti (esim. \"4.1\" tai otsikon sana), hakusanalla osumat luvuittain (PDF:ssä sivuittain) ja PDF:stä sivu-parametrilla sivualue. Kerro viranomainen, ohjeen otsikko, luku tai PDF:n sivu, päivämäärä ja diaarinumero, jos ne on annettu, sekä Lähde-linkki. Ohje on viranomaisen tulkinta, ei lakia. Tarkista lainkohdat hae_pykala-työkalulla.",
     inputSchema: {
       type: "object",
       properties: {
@@ -556,7 +556,7 @@ export const TOOLS = [
   {
     name: "lainvalmisteluhanke",
     description:
-      "Palauttaa ministeriön lainvalmistelu- tai muun hankkeen tiedot Hankeikkunasta: tila ja valmisteluvaihe, tiivistelmä, tavoitteet, hallituksen esityksen tiedot (HE-numero, esittelyviikko HE-luettelossa, vastuuministeri, säädösnumerot), vaiheet ja lausuntokierrokset määräaikoineen, linkit lausuntopalveluun sekä asiakirjat (lausuntopyynnöt, luonnokset, muistiot, lausunnot laatijoittain). Hankkeen voi antaa tunnuksella tai hallituksen esityksen numerolla.",
+      "Palauttaa ministeriön lainvalmistelu- tai muun hankkeen tiedot Hankeikkunasta: tila ja valmisteluvaihe, tiivistelmä, tavoitteet, hallituksen esityksen tiedot (HE-numero, esittelyviikko HE-luettelossa, vastuuministeri, säädösnumerot), vaiheet ja lausuntokierrokset määräaikoineen, linkit lausuntopalveluun sekä asiakirjat (lausuntopyynnöt, luonnokset, muistiot, lausunnot laatijoittain). Hankkeen voi antaa tunnuksella tai hallituksen esityksen numerolla. Kerro hanketunnus (esim. STM006:00/2020) ja Lähde-linkki. Esitysluonnos ei ole annettu hallituksen esitys.",
     inputSchema: {
       type: "object",
       properties: {
@@ -571,7 +571,7 @@ export const TOOLS = [
   {
     name: "lainvalmistelun_asiakirja",
     description:
-      "Palauttaa Hankeikkunan hankkeen asiakirjan tekstin (PDF tai Word): esimerkiksi lausuntopyynnön ja esitysluonnoksen, muistion, lausuntoyhteenvedon tai yksittäisen lausunnon. Asiakirja annetaan numerolla lainvalmisteluhanke-työkalun luettelosta. Pitkä teksti jaetaan osiin (osa-parametri); hakusanalla palautetaan osumat ympäröivine teksteineen.",
+      "Palauttaa Hankeikkunan hankkeen asiakirjan tekstin (PDF tai Word): esimerkiksi lausuntopyynnön ja esitysluonnoksen, muistion, lausuntoyhteenvedon tai yksittäisen lausunnon. Asiakirja annetaan numerolla lainvalmisteluhanke-työkalun luettelosta. Pitkä teksti jaetaan osiin (osa-parametri); hakusanalla palautetaan osumat ympäröivine teksteineen. Kerro hanketunnus (esim. STM006:00/2020), asiakirjan laatija ja päivä sekä Lähde-linkki. Esitysluonnos ei ole annettu hallituksen esitys, ja lausunto on lausunnonantajan kanta.",
     inputSchema: {
       type: "object",
       properties: {
