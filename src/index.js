@@ -2,7 +2,7 @@
 
 import { TOOLS, callTool } from "./tools.js";
 
-const SERVER_INFO = { name: "finlex", version: "1.16.2" };
+const SERVER_INFO = { name: "finlex", version: "1.16.3" };
 const SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 
 const INSTRUCTIONS = `Tämä liitin hakee Suomen säädösten sanatarkan tekstin suoraan Finlexin avoimesta datasta (oikeusministeriö) sekä lakien valmistelun ministeriöissä (Hankeikkuna) ja eduskuntakäsittelyn asiakirjat Eduskunnan avoimesta datasta. Lisäksi se hakee hallituksen esitykset, viranomaisten tiedotteet, ohjeet, määräykset ja ratkaisut, Verohallinnon syventävät vero-ohjeet, yleissitovat työehtosopimukset sekä kirjanpitolautakunnan (KILA), Kuluttajariitalautakunnan ja Mainonnan eettisen neuvoston (MEN) kannanotot.

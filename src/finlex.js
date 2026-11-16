@@ -232,9 +232,22 @@ export async function walkList(url, maxPages, { ttl = 3600 } = {}) {
   const pages = [];
   const seen = new Set();
   let lastSeen = null;
+  // Finlex kehottaa lopettamaan page-parametrin käytön. Jos rajapinta hylkää sen (400 tai 422), sama sivu
+  // haetaan ilman sitä, ja loput sivut pelkällä lastSeen-arvolla (tarkistettu 16.11.2026: muutos ei vielä voimassa).
+  let usePage = true;
+  const pageUrl = (k) => {
+    const q = [usePage ? `page=${k}` : "", lastSeen ? `lastSeen=${encodeURIComponent(lastSeen)}` : ""].filter(Boolean).join("&");
+    return q ? `${url}${url.includes("?") ? "&" : "?"}${q}` : url;
+  };
   for (let k = 1; k <= maxPages; k++) {
-    const u = `${url}${url.includes("?") ? "&" : "?"}page=${k}${lastSeen ? `&lastSeen=${encodeURIComponent(lastSeen)}` : ""}`;
-    const txt = await fetchText(u, { ttl, accept: "application/json" });
+    let txt;
+    try {
+      txt = await fetchText(pageUrl(k), { ttl, accept: "application/json" });
+    } catch (e) {
+      if (!usePage || !(e instanceof FinlexError) || (e.status !== 400 && e.status !== 422)) throw e;
+      usePage = false;
+      txt = await fetchText(pageUrl(k), { ttl, accept: "application/json" });
+    }
     const arr = txt ? JSON.parse(txt) : [];
     // Rajapinta ei tunnistanut sivutusta (palautti saman sivun uudelleen): tuloksia ei enempää.
     if (!arr.some((x) => !seen.has(x.akn_uri))) break;

@@ -7,6 +7,7 @@ import { kilaUrlAllowed } from "../src/kila.js";
 import { HVA_FEEDS, feedItems, dropContacts, itemText } from "../src/tiedotteet.js";
 import { menCacheTtl, menSearchTerms, menQueryMatch, parseStatement } from "../src/men.js";
 import { readFileSync } from "node:fs";
+import { walkList } from "../src/finlex.js";
 
 const env = {};
 let id = 0;
@@ -30,6 +31,29 @@ async function tool(name, args) {
 function check(cond, label) {
   console.log(`${cond ? "OK  " : "FAIL"} ${label}`);
   if (!cond) process.exitCode = 1;
+}
+
+// Sivutus (viikko 47): jos Finlex hylkää page-parametrin, haetaan pelkällä lastSeen-arvolla (v1.16.3).
+{
+  const orig = globalThis.fetch;
+  const urls = [];
+  const rec = (n) => ({ akn_uri: `https://opendata.finlex.fi/finlex/avoindata/v1/akn/fi/act/statute-consolidated/2000/${n}/fin@` });
+  globalThis.fetch = async (u) => {
+    urls.push(String(u));
+    const q = new URL(String(u)).searchParams;
+    if (q.has("page")) return new Response("page ei tuettu", { status: 400 });
+    const ls = q.get("lastSeen");
+    const start = ls ? Number(ls.split("/").pop()) + 1 : 1;
+    const arr = start > 15 ? [] : Array.from({ length: start === 1 ? 10 : 5 }, (_, i) => rec(start + i));
+    return new Response(JSON.stringify(arr), { status: 200 });
+  };
+  try {
+    const pages = await walkList("https://opendata.finlex.fi/x/list?format=json&koe=" + Date.now(), 5, { ttl: 0 });
+    check(pages.length === 2 && pages[1][0].akn_uri.includes("/2000/11/") && urls.filter((u) => u.includes("page=")).length === 1
+      && urls.some((u) => u.includes("lastSeen=%2Fakn%2Ffi%2Fact%2Fstatute-consolidated%2F2000%2F10")), "sivutus: hylätty page -> pelkkä lastSeen");
+  } finally {
+    globalThis.fetch = orig;
+  }
 }
 
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
@@ -338,5 +362,5 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.2" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.16.3" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }
