@@ -2742,7 +2742,7 @@ async function haeRatkaisuja(args) {
     const diary = d?.diaryNumber ? ` (${d.diaryNumber})` : "";
     return `vuosi ${it.year}, numero ${it.number}: ${date} ${d?.title ?? "(otsikko ei saatavilla)"}${diary}`;
   });
-  let out = `${src.label}, hakutulokset (sivu ${page})${note}. Järjestys: vanhimmasta uusimpaan.\n` + rows.join("\n");
+  let out = `${src.label}, hakutulokset (sivu ${page})${note}. Järjestys: vuoden ja numeron mukaan, vanhimmasta uusimpaan.\n` + rows.join("\n");
   if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1} tai rajaa vuosilla.`;
   out += "\n\nHae ratkaisun teksti työkalulla hae_ratkaisu (lahde, vuosi, numero).";
   return out;
