@@ -599,7 +599,8 @@ export async function searchOhjeet({ query = "", authorities, type = "kaikki" })
         }
       } catch (e) {
         if (e instanceof OhjeUserError) errors.push(`${AUTHORITIES[a].short}: ${e.message}`);
-        else errors.push(`${AUTHORITIES[a].short}: haku epäonnistui (${e?.message ?? e})`);
+        else if (e instanceof OhjeError) errors.push(`${AUTHORITIES[a].short}: haku epäonnistui (${e.message})`);
+        else errors.push(`${AUTHORITIES[a].short}: haku epäonnistui`);
       }
     }),
   );
