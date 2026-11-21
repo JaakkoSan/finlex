@@ -43,14 +43,14 @@ function check(cond, label) {
     const q = new URL(String(u)).searchParams;
     if (q.has("page")) return new Response("page ei tuettu", { status: 400 });
     const ls = q.get("lastSeen");
-    const start = ls ? Number(ls.split("/").pop()) + 1 : 1;
+    const start = ls ? Number(ls.split("/").slice(-2, -1)[0]) + 1 : 1;
     const arr = start > 15 ? [] : Array.from({ length: start === 1 ? 10 : 5 }, (_, i) => rec(start + i));
     return new Response(JSON.stringify(arr), { status: 200 });
   };
   try {
     const pages = await walkList("https://opendata.finlex.fi/x/list?format=json&koe=" + Date.now(), 5, { ttl: 0 });
     check(pages.length === 2 && pages[1][0].akn_uri.includes("/2000/11/") && urls.filter((u) => u.includes("page=")).length === 1
-      && urls.some((u) => u.includes("lastSeen=%2Fakn%2Ffi%2Fact%2Fstatute-consolidated%2F2000%2F10")), "sivutus: hylätty page -> pelkkä lastSeen");
+      && urls.some((u) => u.includes("lastSeen=%2Fakn%2Ffi%2Fact%2Fstatute-consolidated%2F2000%2F10%2Ffin%40")), "sivutus: hylätty page -> pelkkä lastSeen (koko akn-osoite, lastSeen ei toista viimeistä)");
   } finally {
     globalThis.fetch = orig;
   }
@@ -104,7 +104,8 @@ const show = process.argv.includes("-v");
 const cases = [
   ["hae_saadoksia", { otsikko: "arvonlisäverolaki" }, (t) => t.includes("1501/1993") && t.includes("Arvonlisäverolaki")],
   ["hae_saadoksia", { otsikko: "osakeyhtiölaki" }, (t) => t.includes("624/2006")],
-  ["hae_hallituksen_esityksia", { otsikko: "sosiaalihuolto", sivu: 2 }, (t) => t.includes("sivu 2") && t.includes("HE ")],
+  ["hae_hallituksen_esityksia", { otsikko: "sosiaalihuolto", sivu: 2 }, (t) => t.includes("sivu 2") && t.includes("HE ") && !t.includes("HE 174/1992") && !t.includes("HE 327/1992")],
+  ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", alkaen_vuosi: 2023, paattyen_vuosi: 2024, sivu: 2 }, (t) => t.includes("sivu 2") && !t.includes("2023/1683")],
   ["saados_tiedot", { vuosi: 2018, numero: "1050" }, (t) => t.includes("Tietosuojalaki") && t.includes("AJANTASAINEN")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "3" }, (t) => t.includes("3 §") && t.includes("Huomautus")],
   ["hae_pykala", { vuosi: 2006, numero: "624", luku: "13", pykala: "2" }, (t) => t.includes("13 luku") && t.includes("2 §")],
@@ -396,5 +397,5 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.4" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.16.5" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }

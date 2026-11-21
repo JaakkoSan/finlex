@@ -187,7 +187,7 @@ export const TOOLS = [
         otsikko: { type: "string", description: "Merkkijono, jonka esityksen otsikko sisältää, esim. \"arvonlisäverolain\" tai \"sosiaalihuoltolain\"." },
         alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
         paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
-        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta. Tulokset ovat antopäivän mukaan vanhimmasta uusimpaan." },
+        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta. Tulokset ovat vuoden ja numeron mukaan vanhimmasta uusimpaan." },
       },
     },
   },
@@ -1112,7 +1112,7 @@ async function haeHallituksenEsityksia(args) {
     startYear: args.alkaen_vuosi,
     endYear: args.paattyen_vuosi,
     limit: 10,
-    sortBy: "dateIssued",
+    // Ei sortBy-parametria: lastSeen-sivutus ei toimi sen kanssa (Finlex palauttaa 0 tulosta, 22.11.2026).
   };
   const list = await fetchListPage(docListUrl("government-proposal", params), page);
   if (!list.length) return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. sanan vartaloa \"arvonlisävero\").";
@@ -1126,7 +1126,7 @@ async function haeHallituksenEsityksia(args) {
   }
   const heads = await Promise.all(items.map((it) => fetchHead(proposalUrl(it.year, it.number, "fin")).catch(() => null)));
   const lines = items.map((it, i) => `HE ${it.number}/${it.year} ${heads[i]?.title ?? "(otsikko ei saatavilla)"}`);
-  let out = `Hallituksen esitykset (sivu ${page}, vanhimmasta uusimpaan):\n` + lines.join("\n");
+  let out = `Hallituksen esitykset (sivu ${page}, vuoden ja numeron mukaan vanhimmasta uusimpaan):\n` + lines.join("\n");
   if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1}.`;
   out += "\n\nHae esitys työkalulla hallituksen_esitys (vuosi ja numero).";
   return out;
@@ -2719,7 +2719,7 @@ async function haeRatkaisuja(args) {
     startYear: start,
     endYear: end,
     limit: 10,
-    sortBy: "dateIssued",
+    // Ei sortBy-parametria: lastSeen-sivutus ei toimi sen kanssa (Finlex palauttaa 0 tulosta, 22.11.2026).
   };
   const list = await fetchListPage(decisionListUrl(src, params), page);
   if (!list.length) {

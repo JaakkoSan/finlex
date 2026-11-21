@@ -214,11 +214,13 @@ export function proposalWebUrl(year, number) {
   return `https://www.finlex.fi/fi/hallituksen-esitykset/${year}/${number}`;
 }
 
-/** Listaustietueen akn_uri lastSeen-muotoon: "/akn/fi/act/statute-consolidated/1992/912". */
+/**
+ * Listaustietueen akn_uri lastSeen-muotoon: "/akn/fi/act/statute-consolidated/1992/912/fin@20000693".
+ * Kieli ja versio (fin@...) pidetään mukana: silloin Finlex jättää viimeisen tietueen pois, ilman sitä se
+ * palauttaisi sen uudelleen (tarkistettu 22.11.2026).
+ */
 export function lastSeenOf(uri) {
-  return String(uri ?? "")
-    .replace(/^https?:\/\/[^/]+\/finlex\/avoindata\/v1/, "")
-    .replace(/\/[a-z]{3}@[^/]*$/, "");
+  return String(uri ?? "").replace(/^https?:\/\/[^/]+\/finlex\/avoindata\/v1/, "");
 }
 
 /**
