@@ -56,6 +56,40 @@ function check(cond, label) {
   }
 }
 
+// Virhetekstit (22.11.2026): odottamattoman poikkeuksen teksti ei näy vastauksessa eikä lokissa;
+// tarkoitukselliset virheet (syötteen muoto, lähteen tila) näkyvät yhä.
+{
+  const SALAISUUS = "SISAINEN-salaisuus-xyz";
+  const orig = globalThis.fetch;
+  const origErr = console.error;
+  const loki = [];
+  console.error = (...a) => loki.push(a.map(String).join(" "));
+  try {
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => { throw new Error(SALAISUUS); },
+      json: async () => { throw new Error(SALAISUUS); },
+      arrayBuffer: async () => { throw new Error(SALAISUUS); },
+    });
+    const r = await tool("hae_pykala", { vuosi: 1987, numero: "1987", pykala: "1" });
+    check(r.isError && !r.text.includes(SALAISUUS) && r.text.includes("Haku epäonnistui"), "virheteksti: odottamaton poikkeus piilotetaan vastauksesta");
+    check(loki.length > 0 && !loki.some((l) => l.includes(SALAISUUS)) && loki.some((l) => l.includes("hae_pykala") && l.includes("Error")), "virheteksti: lokiin vain työkalu ja virheen nimi");
+    globalThis.fetch = async () => new Response("", { status: 404 });
+    const s = await tool("hae_pykala", { vuosi: 1987, numero: "1988", pykala: "1" });
+    check(s.isError && s.text.includes("ei löytynyt Finlexistä"), "virheteksti: ei löytynyt (404) näkyy yhä");
+    globalThis.fetch = async () => new Response("", { status: 400 });
+    const f = await tool("hae_pykala", { vuosi: 1987, numero: "1989", pykala: "1" });
+    check(f.isError && f.text.includes("Finlex-haku epäonnistui: Finlex vastasi 400"), "virheteksti: lähteen tila (400) näkyy yhä");
+  } finally {
+    globalThis.fetch = orig;
+    console.error = origErr;
+  }
+  const u = await tool("hae_pykala", { vuosi: "x", numero: "1", pykala: "1" });
+  check(u.isError && u.text.includes("vuosi"), "virheteksti: syötteen muotovirhe näkyy yhä");
+}
+
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
 // Palvelinohje alle 4 000 merkkiä: Claude-asiakkaat katkaisevat ohjeen noin 4 096 merkin kohdalta (v1.16.2).
@@ -362,5 +396,5 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.3" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.16.4" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }

@@ -635,6 +635,9 @@ for (const t of TOOLS) {
 
 class UserError extends Error {}
 
+// Odottamattoman poikkeuksen tilalla näytettävä teksti (sama kuin yhteisessä rungossa).
+const YLEINEN_VIRHE = "Haku epäonnistui. Yritä hetken päästä uudelleen.";
+
 function asYear(v) {
   const n = Number(v);
   if (!Number.isInteger(n) || n < 1700 || n > 2200) throw new UserError("Anna vuosi nelinumeroisena, esim. 1993.");
@@ -1964,7 +1967,7 @@ async function viranomaistiedotteet(args) {
   const from = args.alkaen ? asIsoDate(args.alkaen, "alkaen") : null;
   const q = String(args.hakusana ?? "").trim().toLowerCase();
   const max = Math.min(TIEDOTE_MAX, Math.max(1, Number.parseInt(args.enintaan, 10) || 20));
-  const results = await Promise.all(keys.map((k) => feedItems(k).then((items) => ({ k, items })).catch((e) => ({ k, items: [], err: e?.message ?? String(e) }))));
+  const results = await Promise.all(keys.map((k) => feedItems(k).then((items) => ({ k, items })).catch((e) => ({ k, items: [], err: e instanceof FinlexError ? e.message : "haku epäonnistui" }))));
   let all = results.flatMap((r) => r.items);
   if (from) all = all.filter((i) => i.date && i.date.slice(0, 10) >= from);
   if (q) all = all.filter((i) => `${i.title} ${i.summary ?? ""}`.toLowerCase().includes(q));
@@ -2775,7 +2778,7 @@ async function haeRatkaisu(args) {
         lines.push("", `PDF: ${url} (tekstiä ei saatu purettua)`);
       }
     } catch (e) {
-      lines.push("", `PDF: ${url} (purku epäonnistui: ${e?.message ?? e})`);
+      lines.push("", `PDF: ${url} (purku epäonnistui${e instanceof FinlexError ? `: ${e.message}` : ""})`);
     }
   }
   if (!bodyText && !d.pdfs.length) lines.push("", "(Ratkaisulle ei ole tekstiä Finlexin avoimessa datassa.)");
@@ -3817,7 +3820,12 @@ export async function callTool(name, args = {}) {
           ? `Hankeikkunan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
           : e instanceof FinlexError
           ? `Finlex-haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : `Odottamaton virhe: ${e?.message ?? e}`;
+          : null;
+    if (msg === null) {
+      // Odottamaton poikkeus: sisäistä tekstiä ei näytetä eikä kirjata (voi sisältää rajapintojen tietoja).
+      console.error("tyokalu:", name, e?.name ?? "virhe");
+      return { isError: true, content: [{ type: "text", text: YLEINEN_VIRHE }] };
+    }
     return { isError: true, content: [{ type: "text", text: msg }] };
   }
 }
