@@ -335,7 +335,7 @@ const menBlock = (t, title) => {
 const menCases = [
   ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("- 7 Markkinoinnin tunnistettavuus: ") && !t.includes("7 artikla - ") && t.includes(MEN_SRC)],
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja" }, (t) => /: \d+ osumaa, sivu 1\/\d+/.test(t) && t.includes("tunnus: men-") && t.includes("tiivistelmä:") && t.includes("ei sitova eikä viranomaispäätös") && t.includes(MEN_SRC)],
-  // Haku osui jäsenluetteloon (jäsenen titteli "vaikuttaja"); MEN 40/2026 Sports Lady suodatetaan pois (Ohjaamo C1).
+  // Haku osui jäsenluetteloon (jäsenen titteli "vaikuttaja"); MEN 40/2026 Sports Lady suodatetaan pois.
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja", ratkaisu: "huomautus" }, (t) => t.includes("ennen suodatusta (arvio)") && /Tältä sivulta \d+ osumaa? suodatettiin pois, koska hakusana oli vain jäsenluettelossa\./.test(t) && !t.includes("Sports Lady") && !t.includes("Kouvolan Lakritsi") && t.includes("MEN 43/2026 Soluni Oy") && t.includes("Lisää tuloksia: sivu 2.")],
   // Listan kohdat (li) ovat lausunnon tekstiä: "verenpainee" on vain MEN 39/2026:n listakohdassa.
   ["hae_men_lausuntoja", { hakusana: "verenpainee" }, (t) => t.includes("MEN 39/2026 Kouvolan Lakritsi Oy") && !t.includes("suodatettiin pois") && /: 1 osuma, sivu 1\/1/.test(t)],
