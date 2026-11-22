@@ -37,6 +37,7 @@ import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, gu
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
 import { MenError, MEN_SEARCH_PAGE, MEN_PAGE_SIZE, menTaxonomies, menTotal, matchArticles, matchDecision, matchMedia, shortArticle, searchStatements as menSearch, parseMenId, slugByNumber, statementBySlug, overviewSection, findSection } from "./men.js";
 import { KrilError, KRIL_BASE, KRIL_PAGE_SIZE, krilThemes, matchTheme, searchDecisions, krilSlug, decisionBySlug, OVERVIEW as KRIL_OVERVIEW } from "./kril.js";
+import { ReklamaatioVirhe, KSL, SOPIMUSTYYPIT, TILANTEET, LAINKOHDAT_SKEEMA, lainkohdat, lainkohdatTeksti } from "./reklamaatio.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -583,6 +584,20 @@ export const TOOLS = [
       required: ["hanke", "asiakirja"],
     },
   },
+  {
+    name: "reklamaation_lainkohdat",
+    description:
+      "Kuluttajansuojalain (38/1978) pykälät reklamaatiotilanteeseen: anna sopimustyyppi (tavara, digitaalinen, esinepalvelu, muu_palvelu tai etamyynti) ja tilanne (virhe, viivastys tai peruutus). Palauttaa sovellettavat pykälät ajantasaisena tekstinä Finlexistä (pitkät katkaistuna), merkinnän soveltuvatko ne suoraan vai vain periaatteina (esim. kauneushoito ja muut ihmiseen kohdistuvat palvelut) sekä hakusanat Kuluttajariitalautakunnan ratkaisuihin. Kerro pykälät, soveltuminen ja Lähde-linkki; tieto on yleistä, ei oikeudellista neuvontaa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sopimustyyppi: { type: "string", enum: Object.keys(SOPIMUSTYYPIT), description: Object.entries(SOPIMUSTYYPIT).map(([k, v]) => `${k}: ${v}`).join("; ") + "." },
+        tilanne: { type: "string", enum: Object.keys(TILANTEET), description: "virhe, viivastys tai peruutus." },
+      },
+      required: ["sopimustyyppi", "tilanne"],
+    },
+    outputSchema: LAINKOHDAT_SKEEMA,
+  },
 ];
 
 // Työkalujen merkinnät (MCP tool annotations): kaikki työkalut vain lukevat
@@ -591,6 +606,7 @@ const TITLES = {
   hae_saadoksia: "Hae säädöksiä",
   saados_tiedot: "Säädöksen tiedot",
   hae_pykala: "Hae pykälä",
+  reklamaation_lainkohdat: "Reklamaation lainkohdat",
   etsi_saadoksesta: "Etsi säädöksen tekstistä",
   hae_ratkaisuja: "Hae viranomaisratkaisuja",
   hae_ratkaisu: "Hae viranomaisratkaisu",
@@ -3757,10 +3773,28 @@ async function menLausunto(args) {
   return clip([...out, ...tail].join("\n"));
 }
 
+// reklamaation_lainkohdat: kartta ja muotoilu src/reklamaatio.js:ssä; tässä vain Finlex-haku (sama kuin hae_pykala).
+async function reklamaationLainkohdat(args) {
+  const s = await loadStatute({ vuosi: KSL.vuosi, numero: KSL.numero });
+  const haeTeksti = async (luku, pykala) => {
+    const groups = findGroups(s.base, await loadShard(s, pykala), pykala, luku);
+    return groups.length ? finalize(groups.map((g) => g.r).join("\n\n"), s.future) : "";
+  };
+  let data;
+  try {
+    data = await lainkohdat(args, { haeTeksti, saados: async () => ({ otsikko: header(s), lahde: webUrl(s.year, s.number, s.lang, s.original) }) });
+  } catch (e) {
+    if (e instanceof ReklamaatioVirhe) throw new UserError(e.message);
+    throw e;
+  }
+  return { teksti: clip(lainkohdatTeksti(data)), data };
+}
+
 const HANDLERS = {
   hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
   hae_pykala: haePykala,
+  reklamaation_lainkohdat: reklamaationLainkohdat,
   etsi_saadoksesta: etsiSaadoksesta,
   hae_ratkaisuja: haeRatkaisuja,
   hae_ratkaisu: haeRatkaisu,
@@ -3796,8 +3830,10 @@ export async function callTool(name, args = {}) {
   const fn = HANDLERS[name];
   if (!fn) return { isError: true, content: [{ type: "text", text: `Tuntematon työkalu: ${name}` }] };
   try {
-    const text = await fn(args ?? {});
-    return { content: [{ type: "text", text }] };
+    const tulos = await fn(args ?? {});
+    // Rakenteinen tulos (koodiajo-valmius): käsittelijä voi palauttaa { teksti, data }, kun työkalulla on outputSchema.
+    if (tulos && typeof tulos === "object") return { content: [{ type: "text", text: tulos.teksti }], structuredContent: tulos.data };
+    return { content: [{ type: "text", text: tulos }] };
   } catch (e) {
     const msg =
       e instanceof UserError
