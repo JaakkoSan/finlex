@@ -445,11 +445,75 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(!r.result?.isError && sc?.pykalat?.length === 4 && sc.pykalat.every((p) => p.teksti.includes(`${p.pykala} §`) && p.teksti.includes(p.otsikko.split(" (")[0])) && /AJANTASAINEN/.test(r.result.content[0].text), "reklamaatio: oikea haku Finlexistä (8:26, 8:30, 8:33, 4:1), otsikot vastaavat", r.result?.content?.[0]?.text?.slice(0, 300));
 }
 
-// Versio package.jsonissa ja package-lock.jsonissa sekä MCP-palvelimen tiedoissa (SERVER_INFO luetaan package.jsonista, v1.18.0).
+// Rakenteiset hakulistat (v1.19.0, koodiajo-valmius): tyokalu()-muoto, outputSchema, structuredContent ja sivutus.
+// Palvelin rungon testitilassa: structuredContent tarkistetaan tulosSkeemaa vasten ja lahde.nimi vaaditaan.
+{
+  const { luoFinlex } = await import("../src/index.js");
+  const varoitukset = [];
+  const testi = luoFinlex({ tarkistaTulokset: true, varoita: (v) => varoitukset.push(v) });
+  const kutsu = async (name, args) => {
+    const res = await testi.fetch(new Request("https://example.test/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }),
+    }), env);
+    const j = await res.json();
+    return { r: j.result, text: j.result?.content?.map((c) => c.text).join("\n") ?? "", sc: j.result?.structuredContent, virhe: j.error };
+  };
+  const RAKENTEISET = ["hae_saadoksia", "hae_hallituksen_esityksia", "hae_ratkaisuja", "hae_tyoehtosopimuksia", "viranomaistiedotteet"];
+  for (const n of RAKENTEISET) {
+    const m = list.result.tools.find((t) => t.name === n);
+    check(m?.outputSchema?.oneOf?.length === 2 && m.annotations?.readOnlyHint === true && m.annotations?.destructiveHint === false, `rakenteinen ${n}: outputSchema ja vain luku`);
+  }
+  check(!varoitukset.length, `rakenteiset: ei rungon varoituksia${varoitukset.length ? `: ${varoitukset.join(" | ")}` : ""}`);
+  const testit = [
+    ["hae_saadoksia", { otsikko: "arvonlisäverolaki" }, (sc) => sc.saadokset.some((r) => r.tunnus === "1501/1993" && r.vuosi === 1993 && r.numero === "1501" && r.linkki.startsWith("https://www.finlex.fi/")) && sc.sivu === 1],
+    ["hae_saadoksia", { otsikko: "laki" }, (sc) => sc.saadokset.length > 0 && sc.seuraava === 2 && sc.sivuja === 2],
+    ["hae_hallituksen_esityksia", { otsikko: "arvonlisäverolaiksi", paattyen_vuosi: 1995 }, (sc) => sc.esitykset.some((r) => r.tunnus === "HE 88/1993" && r.linkki.includes("/hallituksen-esitykset/1993/88"))],
+    ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (sc) => sc.ratkaisija === "Tietosuojavaltuutettu" && sc.ratkaisut.length > 0 && sc.ratkaisut.every((r) => r.vuosi && r.numero && r.linkki)],
+    ["hae_ratkaisuja", { lahde: "oikeuskansleri" }, (sc) => sc.oletusvuodet?.paattyen === new Date().getUTCFullYear()],
+    ["hae_tyoehtosopimuksia", { hakusana: "sosiaali" }, (sc) => sc.sopimukset.some((r) => r.tunnus === "2017/3" && /Hyvinvointialan liitto ry/.test(r.tyonantajat ?? "")) && sc.yhteensa === sc.sopimukset.length && sc.rajattu === false && sc.tiivis === false],
+    ["hae_tyoehtosopimuksia", {}, (sc) => sc.tiivis === true && sc.yhteensa > 50 && sc.sopimukset.length === 50 && sc.rajattu === true && !("kaikkiRivit" in sc)],
+    ["viranomaistiedotteet", { viranomainen: "tietosuoja,kyber,kkv", enintaan: 5 }, (sc) => sc.naytetaan <= 5 && sc.tiedotteet.length === sc.naytetaan && sc.valtion_viranomaiset === true && sc.hyvinvointialueet.length === 0],
+    ["viranomaistiedotteet", { viranomainen: "hus,helsinki", enintaan: 3 }, (sc) => sc.valtion_viranomaiset === false && sc.hyvinvointialueet.length === 2],
+  ];
+  for (const [n, a, ehto] of testit) {
+    let t;
+    try {
+      t = await kutsu(n, a);
+    } catch (e) {
+      check(false, `rakenteinen ${n} ${JSON.stringify(a)}: ${e?.message ?? e}`);
+      continue;
+    }
+    if (t.r?.isError && t.sc?.virhe?.koodi === "lahde") {
+      check(false, `rakenteinen ${n} ${JSON.stringify(a)}: lähde ei vastannut (${t.sc.virhe.lahteen_koodi ?? "?"})`);
+      continue;
+    }
+    check(!t.virhe && !t.r?.isError && t.sc && ehto(t.sc) && !("lahteenRiveja" in t.sc) && typeof t.sc.lahde?.nimi === "string", `rakenteinen ${n} ${JSON.stringify(a)}`);
+  }
+  // Virheet: sama teksti kuin ennen ja rakenteinen virhe koodeineen.
+  const v1 = await kutsu("hae_saadoksia", {});
+  check(v1.r?.isError && v1.text === "Anna otsikko tai asiasana." && v1.sc?.virhe?.koodi === "syote", "rakenteinen virhe: syöte (hae_saadoksia ilman hakuehtoja)");
+  const v2 = await kutsu("viranomaistiedotteet", { viranomainen: "lappi" });
+  check(v2.r?.isError && v2.text.startsWith("Hyvinvointialueilta puuttuvat") && v2.sc?.virhe?.koodi === "syote", "rakenteinen virhe: puuttuva hyvinvointialue");
+  const v3 = await kutsu("hae_saadoksia", { otsikko: "laki", sivu: 31 });
+  check(v3.r?.isError && v3.text.startsWith("Sivuja voi selata enintään 30") && v3.sc?.virhe?.koodi === "syote", "rakenteinen virhe: liian suuri sivu");
+  // Lähteen virhe: sama teksti kuin callTool-polulla, koodi lahde ja lähteen tila.
+  const orig = globalThis.fetch;
+  globalThis.fetch = async () => new Response("kielletty", { status: 403 });
+  try {
+    const v4 = await kutsu("hae_hallituksen_esityksia", { otsikko: "koe-" + Date.now() });
+    check(v4.r?.isError && v4.text.startsWith("Finlex-haku epäonnistui:") && v4.sc?.virhe?.koodi === "lahde", "rakenteinen virhe: lähteen virhe (Finlex)", v4.text);
+  } finally {
+    globalThis.fetch = orig;
+  }
+}
+
+// Versio package.jsonissa ja package-lock.jsonissa sekä MCP-palvelimen tiedoissa (SERVER_INFO luetaan package.jsonista, v1.18.0; v1.19.0).
 {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
-  check(pkg === "1.18.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} package.jsonissa, package-lock.jsonissa ja serverInfossa`);
+  check(pkg === "1.19.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} package.jsonissa, package-lock.jsonissa ja serverInfossa`);
 }
 
 // Yhteinen runko (v1.18.0): kopio ehjä (otsakkeen sha256 vastaa sisältöä) ja User-Agent package.jsonin versiosta.

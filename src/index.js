@@ -2,9 +2,10 @@
 //
 // Runko (polun tarkistus, Origin, protokolla, JSON-RPC, käyttörajojen vastaus) on yhteisessä mcp-runko.js:ssä
 // (kopio yhteisestä rungosta, ei muokata tässä repossa). Työkalut ja niiden virheiden käsittely ovat
-// src/tools.js:ssä (TOOLS ja callTool).
+// src/tools.js:ssä (TOOLS ja callTool); rakenteiset hakulistat tyokalu()-muodossa src/tyokalut.js:ssä (TYOKALUT).
 
 import { TOOLS, callTool } from "./tools.js";
+import { TYOKALUT } from "./tyokalut.js";
 import { luoPalvelin, rajassa } from "./mcp-runko.js";
 import pkg from "../package.json" with { type: "json" };
 
@@ -48,23 +49,34 @@ async function rajoissa(ctx) {
   return true;
 }
 
-const palvelin = luoPalvelin({
-  serverInfo: SERVER_INFO,
-  instructions: INSTRUCTIONS,
-  tools: TOOLS,
-  // callTool käsittelee liittimen omat virheluokat ja rakenteisen tuloksen (structuredContent).
-  callTool: (nimi, args) => callTool(nimi, args),
-  // Julkinen liitin: /mcp ilman salaisuutta. Jos MCP_PATH_SECRET on asetettu, vain /mcp/<salaisuus> (ks. lisareitit).
-  polku: { julkinen: true },
-  // Julkinen /mcp ilman tunnistusta: työkalulista saa olla jaetussa välimuistissa (2026-07-28).
-  // Jos MCP_PATH_SECRET otetaan käyttöön, cacheScope vaihdetaan arvoon "private".
-  listaValimuisti: { cacheScope: "public" },
-  juuriteksti: "Finlex MCP -palvelin. Ei julkista sisältöä.\n",
-  rajat: rajoissa,
-  // Kun salainen polku on asetettu, julkinen /mcp ei vastaa (sama kuin ennen runkoa).
-  lisareitit: async (request, env) =>
-    env?.MCP_PATH_SECRET && new URL(request.url).pathname === "/mcp" ? new Response("Not found", { status: 404 }) : null,
-});
+/**
+ * Palvelin. Testit antavat tarkistaTulokset: true (rungon testitila: rakenteinen tulos tarkistetaan tulosSkeemaa vasten
+ * ja lahde.nimi vaaditaan); tuotannossa ei.
+ */
+export function luoFinlex({ tarkistaTulokset = false, varoita } = {}) {
+  return luoPalvelin({
+    serverInfo: SERVER_INFO,
+    instructions: INSTRUCTIONS,
+    tools: TOOLS,
+    tyokalut: TYOKALUT,
+    // callTool käsittelee liittimen omat virheluokat ja rakenteisen tuloksen (structuredContent).
+    callTool: (nimi, args) => callTool(nimi, args),
+    // Julkinen liitin: /mcp ilman salaisuutta. Jos MCP_PATH_SECRET on asetettu, vain /mcp/<salaisuus> (ks. lisareitit).
+    polku: { julkinen: true },
+    // Julkinen /mcp ilman tunnistusta: työkalulista saa olla jaetussa välimuistissa (2026-07-28).
+    // Jos MCP_PATH_SECRET otetaan käyttöön, cacheScope vaihdetaan arvoon "private".
+    listaValimuisti: { cacheScope: "public" },
+    juuriteksti: "Finlex MCP -palvelin. Ei julkista sisältöä.\n",
+    rajat: rajoissa,
+    // Kun salainen polku on asetettu, julkinen /mcp ei vastaa (sama kuin ennen runkoa).
+    lisareitit: async (request, env) =>
+      env?.MCP_PATH_SECRET && new URL(request.url).pathname === "/mcp" ? new Response("Not found", { status: 404 }) : null,
+    tarkistaTulokset,
+    ...(varoita ? { varoita } : {}),
+  });
+}
+
+const palvelin = luoFinlex();
 
 export const handleMessage = palvelin.kasitteleViesti;
 
