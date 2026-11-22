@@ -34,7 +34,7 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/ohjeet.js`: viranomaisten ohjeet verkkosivuilta (Traficomin Kyberturvallisuuskeskus, tietosuojavaltuutettu, KKV, PRH): verkkotunnusten valkoinen lista, robots.txt ja Crawl-delay, sivun jäsennys luvuiksi, PDF sivuittain
 - `src/prhPages.js`: PRH:n ohjesivujen lähtölista
 - `src/xml.js`: pieni XML-jäsennin
-- `test/smoke.mjs`: savutesti oikeaa Finlexiä vasten Lähdefunktion suora kutsu (viranomaistiedotteiden syötteet) kulkee apurin `lahteesta` kautta: lähteen virhe (esim. 503) on FAIL-rivi eikä pysäytä sarjaa (22.11.2026, Tonyn sessio, haara testi-syote-virhe; ennen 503 pysäytti sarjan kohtaan 240, ja myöhemmät testit jäivät ajamatta).
+- `test/smoke.mjs`: savutesti oikeaa Finlexiä vasten Lähdefunktion suora kutsu (viranomaistiedotteiden syötteet) kulkee apurin `lahteesta` kautta: lähteen virhe (esim. 503) on FAIL-rivi eikä pysäytä sarjaa (22.11.2026, haara testi-syote-virhe, PR #3; ennen 503 pysäytti sarjan kohtaan 240, ja myöhemmät testit jäivät ajamatta).
 
 ## Julkaisu
 
