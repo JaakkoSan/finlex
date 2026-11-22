@@ -445,10 +445,18 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(!r.result?.isError && sc?.pykalat?.length === 4 && sc.pykalat.every((p) => p.teksti.includes(`${p.pykala} §`) && p.teksti.includes(p.otsikko.split(" (")[0])) && /AJANTASAINEN/.test(r.result.content[0].text), "reklamaatio: oikea haku Finlexistä (8:26, 8:30, 8:33, 4:1), otsikot vastaavat", r.result?.content?.[0]?.text?.slice(0, 300));
 }
 
-// Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
+// Versio package.jsonissa ja package-lock.jsonissa sekä MCP-palvelimen tiedoissa (SERVER_INFO luetaan package.jsonista, v1.18.0).
 {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
-  const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.17.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.18.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} package.jsonissa, package-lock.jsonissa ja serverInfossa`);
+}
+
+// Yhteinen runko (v1.18.0): kopio ehjä (otsakkeen sha256 vastaa sisältöä) ja User-Agent package.jsonin versiosta.
+{
+  const { tarkistaKopio, userAgent } = await import("../src/mcp-runko.js");
+  const k = await tarkistaKopio(readFileSync(new URL("../src/mcp-runko.js", import.meta.url), "utf8"));
+  check(k.ok && k.versio === "1.1.0", `mcp-runko-kopio ehjä (${k.versio})`);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  check(userAgent("finlex", pkg) === `finlex-mcp/${pkg} (Claude-liitin; Cloudflare Worker)`, `User-Agent finlex-mcp/${pkg}`);
 }

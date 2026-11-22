@@ -7,11 +7,13 @@
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 import { decode, htmlText } from "./tiedotteet.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
 export const MEN_BASE = "https://kauppakamari.fi";
 export const MEN_SEARCH_PAGE = `${MEN_BASE}/palvelut/mainonnan-eettinen-neuvosto/etsi-lausuntoa/`;
 const API = `${MEN_BASE}/wp-json/wp/v2`;
-const USER_AGENT = "finlex-mcp/1.15 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const SEARCH_TTL = 86400; // haut 1 vrk
 const STATEMENT_TTL = 30 * 86400; // lausunnot 30 vrk
 const TERM_TTL = 7 * 86400; // luokittelut 7 vrk

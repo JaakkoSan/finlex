@@ -26,8 +26,10 @@
 // (robots.txt sallii; STT Info pyytää 1 s viivettä, ja haut välimuistitetaan).
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
-const USER_AGENT = "finlex-mcp/1.16 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export class TiedoteError extends FinlexError {}
