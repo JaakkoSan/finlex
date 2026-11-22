@@ -17,7 +17,7 @@
 //   7 aluetta omasta RSS-syötteestä. robots.txt sallii syötteet ja tiedotesivut kaikilla
 //   (ekhva.fi ja siunsote.fi: ei robots.txt-tiedostoa). Lappi (ei syötettä) ja Keski-Pohjanmaa
 //   (soite.fi kieltää tekoälyrobotit) puuttuvat.
-// - Pohjois-Savo (lisätty 13.11.2026, käyttäjä Ohjaamo B1): Liferayn asset publisher -syöte
+// - Pohjois-Savo (lisätty 13.11.2026): Liferayn asset publisher -syöte
 //   https://pshyvinvointialue.fi/fi/ajankohtaiset/-/asset_publisher/inTIi74Lb5G8/rss (ajankohtaiset-sivun
 //   link rel=alternate). robots.txt sallii kaiken (User-agent: *, tyhjä Disallow); sivustolla ei ole
 //   käyttöehtoja (tarkistettu 13.11.2026).
@@ -26,8 +26,10 @@
 // (robots.txt sallii; STT Info pyytää 1 s viivettä, ja haut välimuistitetaan).
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
-const USER_AGENT = "finlex-mcp/1.16 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 
 export class TiedoteError extends FinlexError {}

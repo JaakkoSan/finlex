@@ -102,6 +102,16 @@ export function buildIndex(doc) {
   return idx;
 }
 
+/**
+ * Säädöksen liitteet (hcontainer name="attachments" / "attachment"), esim. terveydensuojelulain liitteen taulukko.
+ * Palauttaa [{ h: otsikko, t: muotoiltu teksti }]. Erillinen välimuistiavain: tarvitaan harvoin.
+ */
+export function buildAttachments(doc) {
+  const containers = findAll(doc.act, "hcontainer").filter((h) => h.attrs.name === "attachments");
+  const items = containers.flatMap((a) => elements(a).filter((e) => e.name === "hcontainer" && e.attrs.name === "attachment"));
+  return items.map((a, i) => ({ h: headingOf(a) || `Liite ${i + 1}`, t: render(a, 0).join("\n") }));
+}
+
 /** Lukujen muotoiltu teksti (erillinen välimuistiavain: tarvitaan harvoin). */
 export function buildChapters(doc) {
   const rootEl = provisionsRoot(doc.act);

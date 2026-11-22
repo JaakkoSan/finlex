@@ -2,8 +2,11 @@
 // Dokumentaatio: https://www.finlex.fi/fi/avoin-data ja
 // OpenAPI-kuvaus https://opendata.finlex.fi/Finlex_avoin_data_v0_4_0.yaml
 
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
+
 export const API_BASE = "https://opendata.finlex.fi/finlex/avoindata/v1";
-const USER_AGENT = "finlex-mcp/1.0 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;

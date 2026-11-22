@@ -9,9 +9,11 @@
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 import { decode, htmlText } from "./tiedotteet.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
 export const KILA_BASE = "https://kirjanpitolautakunta.fi";
-const USER_AGENT = "finlex-mcp/1.11 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const CRAWL_DELAY_MS = 5000;
 const MAX_FETCHES_PER_CALL = 2;
 const MAX_QUEUE_WAIT_MS = 20_000;
