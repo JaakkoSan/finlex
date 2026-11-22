@@ -98,7 +98,7 @@ check(init.result?.serverInfo?.name === "finlex", "initialize");
   check(ins.length > 0 && ins.length < 4000, `palvelinohje ${ins.length} merkkiä (< 4000)`);
 }
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 32, "tools/list (32 työkalua)");
+check(list.result?.tools?.length === 33, "tools/list (33 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -391,10 +391,40 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(!t || t.date === "11.11.2026", `HVA-tiedote: julkaisupäivä eikä otsikon päivä (${t ? t.date : "sivu ei saatavilla"})`);
 }
 
+// reklamaation_lainkohdat (v1.17.0, issue JaakkoSan/liittimet#14): kartta ja muotoilu ilman verkkoa, sitten oikea haku.
+{
+  const R = await import("../src/reklamaatio.js");
+  const vale = { haeTeksti: async (l, p) => `${l} luku\n${p} § Otsikko\n  (1 mom.) ${"x".repeat(p === "13" ? 2000 : 50)}`, saados: async () => ({ otsikko: "Kuluttajansuojalaki (38/1978)", lahde: "https://www.finlex.fi/fi/lainsaadanto/1978/38" }) };
+  const kaikki = Object.entries(R.KARTTA).flatMap(([st, t]) => Object.keys(t).map((ti) => [st, ti]));
+  check(kaikki.length === 15 && Object.keys(R.SOPIMUSTYYPIT).every((k) => R.KARTTA[k]) && kaikki.every(([st, ti]) => R.TILANTEET[ti]), "reklamaatio: kartassa 5 sopimustyyppiä x 3 tilannetta");
+  check(kaikki.every(([st, ti]) => { const r = R.KARTTA[st][ti]; return r.soveltuminen === "ohjaus" ? r.pykalat.length === 0 && r.ohjaus : r.pykalat.length > 0; }), "reklamaatio: ohjausriveillä ei pykäliä, muilla vähintään yksi");
+  const d = await R.lainkohdat({ sopimustyyppi: " Tavara ", tilanne: "virhe" }, vale);
+  check(d.sopimustyyppi === "tavara" && d.pykalat.at(-1).luku === "4" && d.pykalat.at(-1).pykala === "1" && d.pykalat.find((p) => p.pykala === "16 a"), "reklamaatio: tavara virhe -> 5:16 a ja lopuksi 4:1 (sovittelu aina)");
+  const pitka = d.pykalat.find((p) => p.pykala === "13");
+  check(pitka.katkaistu && pitka.teksti.endsWith("[...]") && pitka.teksti.length <= R.TEKSTI_MAX + 6 && /katkaistu 1500 merkkiin/.test(R.lainkohdatTeksti(d)), "reklamaatio: pitkä pykälä katkaistaan ja siitä kerrotaan");
+  const m = await R.lainkohdat({ sopimustyyppi: "muu_palvelu", tilanne: "peruutus" }, vale);
+  const mt = R.lainkohdatTeksti(m);
+  check(m.soveltuminen === "periaatteena" && /eivät kuulu 8 lukuun sellaisenaan/.test(mt) && /kohtuullisuutta \(4 luku 1 §\)/.test(mt) && !/Soklo/.test(mt), "reklamaatio: muu palvelu -> periaatteena, peruutusehdot ja 4:1, ei Soklo-viittausta (yleinen liitin)");
+  check(/ei oikeudellista neuvontaa/.test(mt) && /suosituksia/.test(mt) && /Lähde: https:\/\/www\.finlex\.fi\/fi\/lainsaadanto\/1978\/38/.test(mt) && /hae_kril_ratkaisuja/.test(mt), "reklamaatio: vastuurajaus, Lähde-linkki ja seuraava työkalu");
+  const o = await R.lainkohdat({ sopimustyyppi: "tavara", tilanne: "peruutus" }, vale);
+  check(o.soveltuminen === "ohjaus" && o.pykalat.length === 1 && /etamyynti/.test(R.lainkohdatTeksti(o)), "reklamaatio: tavaran peruutus -> ohjaus etämyyntiin");
+  let virhe = null;
+  try { await R.lainkohdat({ sopimustyyppi: "palvelu", tilanne: "virhe" }, vale); } catch (e) { virhe = e; }
+  check(virhe instanceof R.ReklamaatioVirhe && /sallitut arvot tavara, digitaalinen/.test(virhe.message), "reklamaatio: tuntematon sopimustyyppi -> selkeä virhe");
+  const vr = await tool("reklamaation_lainkohdat", { sopimustyyppi: "tavara" });
+  check(vr.isError && /Kenttä tilanne: sallitut arvot virhe, viivastys, peruutus/.test(vr.text), "reklamaatio: puuttuva tilanne -> käyttäjän virhe työkalusta", vr.text);
+  const os = list.result.tools.find((t) => t.name === "reklamaation_lainkohdat");
+  check(os?.outputSchema?.required?.includes("pykalat") && os.annotations?.readOnlyHint === true, "reklamaatio: outputSchema ja vain luku");
+  // Oikea haku Finlexistä: jokainen pykälä löytyy ja otsikko vastaa Finlexin otsikkoa.
+  const r = await rpc("tools/call", { name: "reklamaation_lainkohdat", arguments: { sopimustyyppi: "muu_palvelu", tilanne: "peruutus" } });
+  const sc = r.result?.structuredContent;
+  check(!r.result?.isError && sc?.pykalat?.length === 4 && sc.pykalat.every((p) => p.teksti.includes(`${p.pykala} §`) && p.teksti.includes(p.otsikko.split(" (")[0])) && /AJANTASAINEN/.test(r.result.content[0].text), "reklamaatio: oikea haku Finlexistä (8:26, 8:30, 8:33, 4:1), otsikot vastaavat", r.result?.content?.[0]?.text?.slice(0, 300));
+}
+
 // Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
 {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.4" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.17.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
 }
