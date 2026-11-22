@@ -1,13 +1,13 @@
-// reklamaation_lainkohdat (issue JaakkoSan/liittimet#14, Tonyn sessio 22.11.2026): kuluttajansuojalain pykälät
+// reklamaation_lainkohdat (22.11.2026): kuluttajansuojalain pykälät
 // reklamaatiotilanteeseen sopimustyypin ja tilanteen mukaan. Kartta sisältää vain pykälänumerot, otsikot ja
 // soveltumisen; lakiteksti haetaan aina Finlexistä ajantasaisena (tools.js antaa hakufunktion), ei kovakoodata.
 //
-// Kartta: Liittimet-keskusrepo suunnitelmat/2026-11-22-reklamaatio-kartta.md. Pykälien numerot ja otsikot
+// Kartta: perustelut keskusrepon JONO.md:ssä. Pykälien numerot ja otsikot
 // tarkistettu Finlexistä 22.11.2026 (38/1978, ajantasainen, viimeisin muutos 835/2026, ajantasaistus 4.9.2026);
 // sanatarkasti 4:1, 5:16 a, 8:1, 8:16, 8:26, 8:30 ja 6:16.
 //
 // Peruutus kauneus- ja hyvinvointipalveluissa: työkalu antaa vain pykälät lähteiksi eikä tee omaa tulkintaa
-// (Tony 22.11.2026; Soklon linjaus on ajanvarauksessa, issue JaakkoSan/liittimet#16).
+// (22.11.2026; palveluntarjoajan oma peruutuslinjaus ei kuulu tähän liittimeen).
 //
 // Koodiajo-valmius: logiikka on puhtaina funktioina (lainkohdat, lainkohdatTeksti), joita voi testata ilman verkkoa.
 
@@ -61,8 +61,7 @@ export const SOVITTELU = p("4", "1", "Sopimuksen sovittelu (kohtuuton ehto)");
 
 const PERIAATE =
   "Ihmiseen kohdistuvat palvelut (esimerkiksi kauneushoito, hieronta, valmennus) eivät kuulu 8 lukuun sellaisenaan (8 luku 1 §). Kuluttajariitalautakunta on soveltanut 8 luvun yleisiä periaatteita myös muihin palveluihin tapauskohtaisesti, joten pykälät ovat periaatteita, eivät suoraan sovellettavia sääntöjä. Hae vastaavat ratkaisut.";
-// Yleinen liitin: ei viittausta Soklo-ajanvaraukseen. Avustajan taito ohjaa Soklon asiakkaat ajanvarauksen
-// peruutuslinjaukseen (issue JaakkoSan/liittimet#16).
+// Yleinen liitin: ei viittausta yksittäiseen ajanvarausjärjestelmään tai sen peruutusehtoihin.
 const PERUUTUS_AJANVARAUS =
   "Varatun ajan peruutuksessa arvioidaan sovittuja peruutusehtoja ja niiden kohtuullisuutta (4 luku 1 §).";
 

@@ -392,7 +392,7 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(!t || t.date === "11.11.2026", `HVA-tiedote: julkaisupäivä eikä otsikon päivä (${t ? t.date : "sivu ei saatavilla"})`);
 }
 
-// reklamaation_lainkohdat (v1.17.0, issue JaakkoSan/liittimet#14): kartta ja muotoilu ilman verkkoa, sitten oikea haku.
+// reklamaation_lainkohdat (v1.17.0): kartta ja muotoilu ilman verkkoa, sitten oikea haku.
 {
   const R = await import("../src/reklamaatio.js");
   const vale = { haeTeksti: async (l, p) => `${l} luku\n${p} § Otsikko\n  (1 mom.) ${"x".repeat(p === "13" ? 2000 : 50)}`, saados: async () => ({ otsikko: "Kuluttajansuojalaki (38/1978)", lahde: "https://www.finlex.fi/fi/lainsaadanto/1978/38" }) };
@@ -405,7 +405,7 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
   check(pitka.katkaistu && pitka.teksti.endsWith("[...]") && pitka.teksti.length <= R.TEKSTI_MAX + 6 && /katkaistu 1500 merkkiin/.test(R.lainkohdatTeksti(d)), "reklamaatio: pitkä pykälä katkaistaan ja siitä kerrotaan");
   const m = await R.lainkohdat({ sopimustyyppi: "muu_palvelu", tilanne: "peruutus" }, vale);
   const mt = R.lainkohdatTeksti(m);
-  check(m.soveltuminen === "periaatteena" && /eivät kuulu 8 lukuun sellaisenaan/.test(mt) && /kohtuullisuutta \(4 luku 1 §\)/.test(mt) && !/Soklo/.test(mt), "reklamaatio: muu palvelu -> periaatteena, peruutusehdot ja 4:1, ei Soklo-viittausta (yleinen liitin)");
+  check(m.soveltuminen === "periaatteena" && /eivät kuulu 8 lukuun sellaisenaan/.test(mt) && /kohtuullisuutta \(4 luku 1 §\)/.test(mt), "reklamaatio: muu palvelu -> periaatteena, peruutusehdot ja 4:1");
   check(/ei oikeudellista neuvontaa/.test(mt) && /suosituksia/.test(mt) && /Lähde: https:\/\/www\.finlex\.fi\/fi\/lainsaadanto\/1978\/38/.test(mt) && /hae_kril_ratkaisuja/.test(mt), "reklamaatio: vastuurajaus, Lähde-linkki ja seuraava työkalu");
   const o = await R.lainkohdat({ sopimustyyppi: "tavara", tilanne: "peruutus" }, vale);
   check(o.soveltuminen === "ohjaus" && o.pykalat.length === 1 && /etamyynti/.test(R.lainkohdatTeksti(o)), "reklamaatio: tavaran peruutus -> ohjaus etämyyntiin");
