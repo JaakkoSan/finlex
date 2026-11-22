@@ -17,7 +17,7 @@
 //   7 aluetta omasta RSS-syötteestä. robots.txt sallii syötteet ja tiedotesivut kaikilla
 //   (ekhva.fi ja siunsote.fi: ei robots.txt-tiedostoa). Lappi (ei syötettä) ja Keski-Pohjanmaa
 //   (soite.fi kieltää tekoälyrobotit) puuttuvat.
-// - Pohjois-Savo (lisätty 13.11.2026, käyttäjä Ohjaamo B1): Liferayn asset publisher -syöte
+// - Pohjois-Savo (lisätty 13.11.2026): Liferayn asset publisher -syöte
 //   https://pshyvinvointialue.fi/fi/ajankohtaiset/-/asset_publisher/inTIi74Lb5G8/rss (ajankohtaiset-sivun
 //   link rel=alternate). robots.txt sallii kaiken (User-agent: *, tyhjä Disallow); sivustolla ei ole
 //   käyttöehtoja (tarkistettu 13.11.2026).
