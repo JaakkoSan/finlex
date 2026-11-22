@@ -30,6 +30,7 @@ Rinnakkaiset PR:t: #2, #3 ja #4 ovat eri haaroissa samasta pohjasta. Koeyhdistys
 - **Lakimuutosvahti.** Lähde: keskusrepon TILANNE.md, Ajastetut ("Lakimuutosvahdin koodaus tämän jälkeen (suunnitelma suunnitelmat/lakimuutosvahti.md)"). Vahti on oma liitin (lakivahti-mcp), joka käyttää finlexin walkList-funktiota tagiin lukittuna; finlexiin ei tehdä sitä varten muutosta ennen kuin vahti aloitetaan.
 - **Viranomaistiedotteen hakusanan kaksoisosuma.** Lähde: keskusrepon TILANNE.md, Jono, kohta 8 (Pienet): hakusanassa kaksi lähekkäistä osumaa näyttää saman otteen kahdesti ("tarjottu, ei tilattu").
 - **Anthropicin liitinhakemiston hakemus (finlex, eurlex, Aluetieto).** Lähde: keskusrepon TILANNE.md, Jono, kohta 9, ja CLAUDE.md, Liitinten tuotteistus ("Hakemistot (finlex, eurlex, Aluetieto) ovat Jaakon päätös, avoin."). Suunnitelma suunnitelmat/liitinhakemisto.md. Jaakon päätös.
+- **TEM:n vastaus KILA-aineiston kaupallisesta käytöstä.** Lähde: keskusrepon vanha TILANNE.md, Odottaa muita (git-historia); suunnitelma suunnitelmat/kila.md keskusrepossa. Odottaa ulkopuolista vastausta; ei toimenpidettä ennen sitä.
 
 ## Hylätty
 
