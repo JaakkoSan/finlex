@@ -26,7 +26,6 @@ Rinnakkaiset PR:t: #2, #3 ja #4 ovat eri haaroissa samasta pohjasta. Koeyhdistys
 
 ## Myöhemmin
 
-- **Finlexin sivutuksen tuotantotarkistus.** Sivutus korjattiin 1.16.5:ssä (PROJECT.md 22.11.2026); varmistetaan tuotannossa, että `lastSeen` ilman `page`-parametria palauttaa oikean sivun, kun 1.16.5 on julkaistu.
 - **Lakimuutosvahti.** Finlexiin ei tehdä muutosta sitä varten ennen kuin vahti aloitetaan. Perustelut keskusrepon JONO.md:ssä.
 - **Viranomaistiedotteen hakusanan kaksoisosuma.** Hakusanassa kaksi lähekkäistä osumaa näyttää saman otteen kahdesti.
 - **Anthropicin liitinhakemiston hakemus (finlex, eurlex, Aluetieto).** Perustelut keskusrepon JONO.md:ssä.
