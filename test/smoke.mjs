@@ -89,6 +89,15 @@ function check(cond, label) {
   const u = await tool("hae_pykala", { vuosi: "x", numero: "1", pykala: "1" });
   check(u.isError && u.text.includes("vuosi"), "virheteksti: syötteen muotovirhe näkyy yhä");
 }
+// Liitteen virheet (v1.17.x)
+{
+  const l2 = await tool("hae_pykala", { vuosi: 1994, numero: "763", liite: "2" });
+  check(l2.isError && /Liitettä 2 ei ole\. Säädöksessä on 1 liite: 1 Liite/.test(l2.text), "liite: olematon numero kertoo liitteet");
+  const lp = await tool("hae_pykala", { vuosi: 1994, numero: "763", liite: "1", pykala: "13" });
+  check(lp.isError && lp.text.includes("joko liite tai pykälä"), "liite: ei yhdessä pykälän kanssa");
+  const le = await tool("hae_pykala", { vuosi: 2018, numero: "1050", liite: "1" });
+  check(le.isError && le.text.includes("ei ole liitteitä"), "liite: säädös ilman liitteitä");
+}
 
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
@@ -112,6 +121,9 @@ const cases = [
   ["hae_pykala", { vuosi: 2006, numero: "624", pykala: "1" }, (t) => t.includes("Anna luku")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "999" }, (t) => t.includes("ei löytynyt")],
   ["etsi_saadoksesta", { vuosi: 1993, numero: "1501", hakusana: "maksuperust" }, (t) => t.includes("Osumat")],
+  // Säädöksen liitteet (terveydensuojelulain liite: ilmoituksenvaraiset toiminnot).
+  ["hae_pykala", { vuosi: 1994, numero: "763", liite: "1" }, (t) => t.includes("Liite") && t.includes("kauneushoitola") && t.includes(" | Kyllä")],
+  ["etsi_saadoksesta", { vuosi: 1994, numero: "763", hakusana: "kauneushoitola" }, (t) => t.includes("Osumat liitteissä") && t.includes("Liite 1") && t.includes("kauneushoitola")],
   ["hae_pykala", { vuosi: 2018, numero: "1050", pykala: "1", teksti: "alkuperainen" }, (t) => t.includes("ALKUPERÄINEN")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "3", versio: "448/2024" }, (t) => t.includes("3 §")],
   ["hae_pykala", { vuosi: 2019, numero: "872", pykala: "1", kieli: "swe" }, (t) => t.includes("1 §")],

@@ -28,7 +28,7 @@ import {
   findRationale,
 } from "./proposal.js";
 import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
-import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
+import { INDEX_VERSION, buildIndex, buildChapters, buildAttachments, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
@@ -106,7 +106,7 @@ export const TOOLS = [
   {
     name: "hae_pykala",
     description:
-      "Palauttaa pykälän tai koko luvun sanatarkan tekstin Finlexistä momentteineen ja kohtineen sekä Finlexin huomautukset (esim. muutosten voimaantulo ja aiempi sanamuoto). Anna pykälä (esim. \"3\", \"3 a\") ja tarvittaessa luku, jos laissa pykälänumerointi alkaa joka luvussa alusta (esim. osakeyhtiölaki: luku \"13\", pykälä \"2\"). Pelkällä luvulla palautetaan koko luku. Kerro säädöksen nimi ja numero, pykälä ja momentti sekä Lähde-linkki ja se, onko teksti ajantasainen vai alkuperäinen ja mihin muutokseen asti se on ajantasaistettu. Jos tulosteessa on HUOM-merkintä tulevasta voimaantulosta tai useampi sanamuoto, kerro se käyttäjälle.",
+      "Palauttaa pykälän tai koko luvun sanatarkan tekstin Finlexistä momentteineen ja kohtineen sekä Finlexin huomautukset (esim. muutosten voimaantulo ja aiempi sanamuoto). Anna pykälä (esim. \"3\", \"3 a\") ja tarvittaessa luku, jos laissa pykälänumerointi alkaa joka luvussa alusta (esim. osakeyhtiölaki: luku \"13\", pykälä \"2\"). Pelkällä luvulla palautetaan koko luku. Parametrilla liite säädöksen liite (esim. terveydensuojelulain liitteen taulukko ilmoituksenvaraisista toiminnoista). Kerro säädöksen nimi ja numero, pykälä ja momentti sekä Lähde-linkki ja se, onko teksti ajantasainen vai alkuperäinen ja mihin muutokseen asti se on ajantasaistettu. Jos tulosteessa on HUOM-merkintä tulevasta voimaantulosta tai useampi sanamuoto, kerro se käyttäjälle.",
     inputSchema: {
       type: "object",
       properties: {
@@ -114,6 +114,7 @@ export const TOOLS = [
         numero: commonProps.numero,
         pykala: { type: "string", description: "Pykälän numero, esim. \"3\" tai \"149 a\"." },
         luku: { type: "string", description: "Luvun numero, esim. \"2\" tai \"2 a\". Valinnainen." },
+        liite: { type: "string", description: "Liitteen järjestysnumero (\"1\" = ensimmäinen) tai \"kaikki\". Valinnainen; ilman pykälää ja lukua." },
         kieli: commonProps.kieli,
         versio: commonProps.versio,
         teksti: commonProps.teksti,
@@ -814,6 +815,15 @@ async function loadChapters(s) {
   return chapters;
 }
 
+/** Liitteiden muotoiltu teksti. Erillinen osa; tarvitaan harvoin. */
+async function loadAttachments(s) {
+  let atts = await getPart(s.requestedUrl, "att", s.ttl);
+  if (Array.isArray(atts)) return atts;
+  atts = buildAttachments(await loadDoc(s));
+  await putParts(s.requestedUrl, s.ttl, { att: atts });
+  return atts;
+}
+
 function header(s) {
   const { meta, year, number, lang, original, fellBack } = s;
   const lines = [];
@@ -943,10 +953,26 @@ async function saadosTiedot(args) {
 }
 
 async function haePykala(args) {
-  if (!args.pykala && !args.luku) throw new UserError("Anna pykälä, luku tai molemmat.");
+  const liite = args.liite !== undefined && args.liite !== null && String(args.liite).trim() !== "" ? String(args.liite).trim().toLowerCase() : null;
+  if (!args.pykala && !args.luku && !liite) throw new UserError("Anna pykälä, luku tai liite.");
+  if (liite && (args.pykala || args.luku)) throw new UserError("Anna joko liite tai pykälä ja luku, ei molempia.");
   const s = await loadStatute(args);
   const fin = (t) => finalize(t, s.future);
   const out = [header(s), ""];
+  if (liite) {
+    const atts = await loadAttachments(s);
+    if (!atts.length) throw new UserError("Säädöksessä ei ole liitteitä Finlexin avoimessa datassa.");
+    if (liite === "kaikki") {
+      out.push(fin(atts.map((a) => a.t).join("\n\n----\n\n")));
+    } else {
+      const n = Number(liite);
+      if (!Number.isInteger(n) || n < 1 || n > atts.length) {
+        throw new UserError(`Liitettä ${args.liite} ei ole. Säädöksessä on ${atts.length} ${atts.length === 1 ? "liite" : "liitettä"}: ${atts.map((a, i) => `${i + 1} ${a.h}`).join("; ")}.`);
+      }
+      out.push(fin(atts[n - 1].t));
+    }
+    return clip(out.join("\n"));
+  }
   if (args.pykala) {
     const groups = findGroups(s.base, await loadShard(s, args.pykala), args.pykala, args.luku);
     if (!groups.length) {
@@ -993,8 +1019,17 @@ async function etsiSaadoksesta(args) {
     return d ? `, EI VIELÄ VOIMASSA, voimaan ${d}` : "";
   };
   const out = [header(s), ""];
-  if (!hits.length) {
-    out.push(`Hakusanaa "${q}" ei löytynyt pykälien tekstistä. Kokeile sanan vartaloa tai synonyymiä.`);
+  // Liitteet (esim. taulukot) haetaan erikseen, koska ne eivät ole pykäliä.
+  const ql = q.toLowerCase();
+  const liiteOsumat = [];
+  (await loadAttachments(s)).forEach((a, i) => {
+    const rivit = a.t.split("\n").filter((r) => r.toLowerCase().includes(ql));
+    if (rivit.length) liiteOsumat.push({ i: i + 1, h: a.h, rivit: rivit.slice(0, 5) });
+  });
+  if (!hits.length && !liiteOsumat.length) {
+    out.push(`Hakusanaa "${q}" ei löytynyt pykälien eikä liitteiden tekstistä. Kokeile sanan vartaloa tai synonyymiä.`);
+  } else if (!hits.length) {
+    out.push(`Hakusanaa "${q}" ei löytynyt pykälien tekstistä.`);
   } else {
     out.push(`Osumat hakusanalle "${q}" (${hits.length}${hits.length >= 30 ? "+, näytetään 30" : ""}):`);
     for (const h of hits) {
@@ -1003,6 +1038,10 @@ async function etsiSaadoksesta(args) {
       const ver = h.versionLabel ? ` [sanamuoto: ${h.versionLabel}${futureOf(h.versionLabel)}]` : "";
       out.push("", `${loc}${head}${ver}`, `  ${h.snippet}`);
     }
+  }
+  if (liiteOsumat.length) {
+    out.push("", `Osumat liitteissä (koko liite: hae_pykala, liite):`);
+    for (const o of liiteOsumat) out.push("", `Liite ${o.i}: ${o.h}`, ...o.rivit.map((r) => `  ${r.trim().slice(0, 300)}`));
   }
   return clip(out.join("\n"));
 }
