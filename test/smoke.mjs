@@ -43,14 +43,14 @@ function check(cond, label) {
     const q = new URL(String(u)).searchParams;
     if (q.has("page")) return new Response("page ei tuettu", { status: 400 });
     const ls = q.get("lastSeen");
-    const start = ls ? Number(ls.split("/").pop()) + 1 : 1;
+    const start = ls ? Number(ls.split("/").slice(-2, -1)[0]) + 1 : 1;
     const arr = start > 15 ? [] : Array.from({ length: start === 1 ? 10 : 5 }, (_, i) => rec(start + i));
     return new Response(JSON.stringify(arr), { status: 200 });
   };
   try {
     const pages = await walkList("https://opendata.finlex.fi/x/list?format=json&koe=" + Date.now(), 5, { ttl: 0 });
     check(pages.length === 2 && pages[1][0].akn_uri.includes("/2000/11/") && urls.filter((u) => u.includes("page=")).length === 1
-      && urls.some((u) => u.includes("lastSeen=%2Fakn%2Ffi%2Fact%2Fstatute-consolidated%2F2000%2F10")), "sivutus: hylätty page -> pelkkä lastSeen");
+      && urls.some((u) => u.includes("lastSeen=%2Fakn%2Ffi%2Fact%2Fstatute-consolidated%2F2000%2F10%2Ffin%40")), "sivutus: hylätty page -> pelkkä lastSeen (koko akn-osoite, lastSeen ei toista viimeistä)");
   } finally {
     globalThis.fetch = orig;
   }
@@ -104,7 +104,8 @@ const show = process.argv.includes("-v");
 const cases = [
   ["hae_saadoksia", { otsikko: "arvonlisäverolaki" }, (t) => t.includes("1501/1993") && t.includes("Arvonlisäverolaki")],
   ["hae_saadoksia", { otsikko: "osakeyhtiölaki" }, (t) => t.includes("624/2006")],
-  ["hae_hallituksen_esityksia", { otsikko: "sosiaalihuolto", sivu: 2 }, (t) => t.includes("sivu 2") && t.includes("HE ")],
+  ["hae_hallituksen_esityksia", { otsikko: "sosiaalihuolto", sivu: 2 }, (t) => t.includes("sivu 2") && t.includes("HE ") && !t.includes("HE 174/1992") && !t.includes("HE 327/1992")],
+  ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", alkaen_vuosi: 2023, paattyen_vuosi: 2024, sivu: 2 }, (t) => t.includes("sivu 2") && !t.includes("numero 1883:") && !t.includes("numero 1683:")],
   ["saados_tiedot", { vuosi: 2018, numero: "1050" }, (t) => t.includes("Tietosuojalaki") && t.includes("AJANTASAINEN")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "3" }, (t) => t.includes("3 §") && t.includes("Huomautus")],
   ["hae_pykala", { vuosi: 2006, numero: "624", luku: "13", pykala: "2" }, (t) => t.includes("13 luku") && t.includes("2 §")],
@@ -121,7 +122,7 @@ const cases = [
   ["hallituksen_esitys", { vuosi: 2024, numero: "1", lakiehdotus: 2 }, (t) => t.includes("34 g §")],
   ["etsi_hallituksen_esityksesta", { vuosi: 2024, numero: "1", hakusana: "kadet" }, (t) => t.includes("Osumat")],
   ["eduskuntakasittely", { asia: "HE 74/2022 vp" }, (t) => t.includes("PeVL 38/2022 vp") && t.includes("säädös 116/2023") && t.includes("16.11.2022 Toinen käsittely") && t.includes("vastalause")],
-  ["eduskuntakasittely", { asia: "HE 44/2002" }, (t) => t.includes("LaVM 28/2002 vp") && t.includes("1. Laki rikoslain muuttamisesta")],
+  ["eduskuntakasittely", { asia: "HE 44/2002" }, (t) => t.includes("LaVM 28/2002 vp") && t.includes("- Laki rikoslain muuttamisesta")],
   ["eduskunnan_aanestykset", { aanestys: "2026-71-3" }, (t) => t.includes("Tulos: jaa 100, ei 22, tyhjiä 52, poissa 25") && t.includes("Hallitusryhmät")],
   ["eduskunnan_aanestykset", { asia: "HE 151/2026 vp", edustaja: "Petteri Orpo" }, (t) => t.includes("2026-104-1") && t.includes("Petteri Orpo (kok)")],
   ["eduskunnan_aanestykset", { hakusana: "alkoholilain" }, (t) => t.includes("osumaa") && t.includes("HE 131/2025 vp")],
@@ -169,11 +170,11 @@ const cases = [
   ["lainvalmisteluhanke", { hanke: "HE 304/2010" }, (t) => t.includes("STM118:00/2010") && t.includes("EV 262/2010")],
   ["lainvalmistelun_asiakirja", { hanke: "STM006:00/2020", asiakirja: 198 }, (t) => t.includes("Lausuntoyhteenveto") && t.includes("120 lausuntoa")],
   ["lainvalmistelun_asiakirja", { hanke: "STM006:00/2020", asiakirja: 89, hakusana: "mitoitus" }, (t) => t.includes("Osumat") && t.includes("henkilöstömitoitus")],
-  ["hae_tyoehtosopimuksia", { hakusana: "sosiaalipalvelu" }, (t) => t.includes("2020/19") && t.includes("Hyvinvointiala HALI ry")],
-  ["hae_tyoehtosopimuksia", {}, (t) => t.includes("Kaupan työehtosopimus") && t.includes("Yleissitovat työehtosopimukset")],
-  ["tyoehtosopimus", { sopimus: "2020/19" }, (t) => t.includes("Soveltamisala") && t.includes("Sisällysluettelo") && t.includes("14 § Ilta- ja yötyö")],
-  ["tyoehtosopimus", { sopimus: "2020/19", pykala: "14" }, (t) => t.includes("iltatyölisänä") && t.includes("PDF:n sivu")],
-  ["tyoehtosopimus", { sopimus: "2020/19", versio: "2024-01-01", hakusana: "koeaika" }, (t) => t.includes("Yksosala2305.pdf") && t.includes("Osumat")],
+  ["hae_tyoehtosopimuksia", { hakusana: "sosiaali" }, (t) => t.includes("2017/3") && t.includes("Hyvinvointialan liitto ry")],
+  ["hae_tyoehtosopimuksia", {}, (t) => t.includes("Kaupan automiesten työehtosopimus") && t.includes("Yleissitovat työehtosopimukset")],
+  ["tyoehtosopimus", { sopimus: "2017/3" }, (t) => t.includes("Soveltamisala") && t.includes("Sisällysluettelo") && t.includes("13 § Ilta- ja yötyö")],
+  ["tyoehtosopimus", { sopimus: "2017/3", pykala: "13" }, (t) => t.includes("iltatyölisänä") && t.includes("PDF:n sivu")],
+  ["tyoehtosopimus", { sopimus: "2017/3", versio: "2024-01-01", hakusana: "koeaika" }, (t) => t.includes("Sosjar2306.pdf") && t.includes("Osumat")],
   ["hae_viranomaismaarayksia", { otsikko: "omavalvont", alkaen_vuosi: 2024 }, (t) => t.includes("national-supervisory-authority-for-welfare-and-health/2024/50504")],
   ["viranomaismaarays", { maarays: "national-supervisory-authority-for-welfare-and-health/2024/50504", sivut: "1" }, (t) => t.includes("Määräys: 1/2024") && t.includes("Valtuutussäännös")],
   ["viranomaismaarays", { maarays: "1", vuosi: 2026 }, (t) => t.includes("useita määräyksiä")],
