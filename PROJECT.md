@@ -20,6 +20,7 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/tools.js`: työkalujen määrittelyt ja toteutus
 - `src/statute.js`: Akoma Ntoso -dokumentin tulkinta ja tekstiksi muotoilu
 - `src/statuteIndex.js`: säädöksen hakemisto välimuistia varten (pykälät, hakuteksti, luvut)
+- `src/reklamaatio.js`: reklamaation_lainkohdat: kartta sopimustyyppi ja tilanne -> kuluttajansuojalain pykälät (vain numerot, otsikot ja soveltuminen; teksti haetaan Finlexistä), datafunktio, tekstituloste ja outputSchema
 - `src/proposal.js`: hallituksen esitysten jäsennys ja hakemisto (perustelujen lohkot, pykälien perustelut, lakiehdotukset)
 - `src/finlex.js`: Finlex-rajapinnan asiakas ja välimuisti
 - `src/decisions.js`: viranomaisratkaisut (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) ja PDF-tekstin purku
@@ -32,7 +33,6 @@ Valmis `fi-eli-mcp` (PyPI) haki vain alkuperäisiä säädöksiä (`/statute/`, 
 - `src/ohjeet.js`: viranomaisten ohjeet verkkosivuilta (Traficomin Kyberturvallisuuskeskus, tietosuojavaltuutettu, KKV, PRH): verkkotunnusten valkoinen lista, robots.txt ja Crawl-delay, sivun jäsennys luvuiksi, PDF sivuittain
 - `src/prhPages.js`: PRH:n ohjesivujen lähtölista
 - `src/xml.js`: pieni XML-jäsennin
-- `src/reklamaatio.js`: reklamaation_lainkohdat: kartta sopimustyyppi ja tilanne -> kuluttajansuojalain pykälät (vain numerot, otsikot ja soveltuminen; teksti haetaan Finlexistä), datafunktio, tekstituloste ja outputSchema
 - `test/smoke.mjs`: savutesti oikeaa Finlexiä vasten
 
 ## Julkaisu
