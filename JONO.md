@@ -1,6 +1,6 @@
 # Jono: finlex-mcp
 
-Liittimen jono (työtapa: keskusrepon docs/liittimien-tyotapa-2026-11-22.md). Valmis kohta poistetaan ja kirjataan MUUTOSLOKI.md:hen samassa commitissa.
+Liittimen jono (työtapa keskusrepossa). Valmis kohta poistetaan ja kirjataan MUUTOSLOKI.md:hen samassa commitissa.
 
 ## Työn alla
 
