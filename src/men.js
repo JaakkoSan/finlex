@@ -208,7 +208,7 @@ export function statementSearchText(html) {
 /**
  * Osuuko haku lausuntoon ilman allekirjoitusosaa? "ok", "signature" (puuttuva termi löytyy vain
  * allekirjoitusosasta eli jäsenluettelosta) tai "other" (termiä ei löydy tekstistä, esim. vain HTML-koodissa;
- * näytetään normaalisti, koska päätös C1 koskee vain jäsenluetteloa).
+ * näytetään normaalisti, koska päätös 13.11.2026 koskee vain jäsenluetteloa).
  */
 export function menQueryMatch(d, terms) {
   if (!terms.length) return "ok";
