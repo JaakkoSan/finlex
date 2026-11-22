@@ -28,6 +28,16 @@ async function tool(name, args) {
   return { isError: !!r.result.isError, text };
 }
 
+// Suora lähdefunktion kutsu (ei tool-apuria): lähteen virhe (esim. 503) on FAIL-rivi eikä pysäytä koko sarjaa.
+async function lahteesta(label, f) {
+  try {
+    return await f();
+  } catch (e) {
+    check(false, `${label}: lähde ei vastannut (${e?.name ?? "virhe"}${e?.status ? ` ${e.status}` : ""})`);
+    return null;
+  }
+}
+
 function check(cond, label) {
   console.log(`${cond ? "OK  " : "FAIL"} ${label}`);
   if (!cond) process.exitCode = 1;
@@ -238,7 +248,7 @@ for (const [name, args, pred] of cases) {
 // Pohjois-Savo (lisätty 13.11.2026): Liferayn syöte, linkeistä redirect-parametri pois, tekstin rajaus
 // sivun pshva_topic-page-osiosta ja yhteystietojen poisto.
 {
-  const items = await feedItems("pohjois_savo");
+  const items = (await lahteesta("Pohjois-Savo: syöte", () => feedItems("pohjois_savo"))) ?? [];
   check(items.length >= 20 && items.every((i) => i.title && i.date && /^https:\/\/pshyvinvointialue\.fi\/fi\/w\/[^?]+$/.test(i.link)), `Pohjois-Savo: syöte vastaa (${items.length} tiedotetta, otsikot, päivät, linkit ilman redirect-parametria)`);
   if (show) console.log(items.slice(0, 5).map((i) => `${i.date.slice(0, 10)} ${i.title}`).join("\n"));
   const a = await tool("viranomaistiedotteet", { viranomainen: "pshva", enintaan: 3 });
@@ -260,7 +270,8 @@ for (const [name, args, pred] of cases) {
   check(!t.isError && t.text.includes("Viimeinen ilmoittautumispäivä on 23.11.2026.") && !/puhelin 044|@pshyvinvointialue|Lisätietoja ja ilmoittautuminen/.test(t.text), "viranomaistiedote Pohjois-Savo: yhteystiedot pois, niiden jälkeinen rivi jää");
 }
 for (const key of [...Object.keys(HVA_FEEDS).filter((k) => HVA_FEEDS[k].page), "hus", "pirkanmaa"]) {
-  const items = await feedItems(key);
+  const items = await lahteesta(`viranomaistiedote ${key}: syöte`, () => feedItems(key));
+  if (!items?.length) continue;
   const it = items.find((i) => i.date) ?? items[0];
   const t0 = Date.now();
   const r = await tool("viranomaistiedote", { osoite: it.link });
@@ -388,7 +399,7 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
 
 // Hyvinvointialueen tiedotteen päivä: otsikossa oleva muu päivä (15.11.) ei saa korvata julkaisupäivää (v1.16.1).
 {
-  const t = await itemText("https://www.hyvaep.fi/tiedote/vuodeosastoverkon-muutokset-ovat-edenneet-kurikan-akuuttiosasto-sulkeutuu-15-11-2026/");
+  const t = await lahteesta("HVA-tiedote", () => itemText("https://www.hyvaep.fi/tiedote/vuodeosastoverkon-muutokset-ovat-edenneet-kurikan-akuuttiosasto-sulkeutuu-15-11-2026/"));
   check(!t || t.date === "11.11.2026", `HVA-tiedote: julkaisupäivä eikä otsikon päivä (${t ? t.date : "sivu ei saatavilla"})`);
 }
 
