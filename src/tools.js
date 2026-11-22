@@ -1,4 +1,4 @@
-// MCP-työkalut: määrittelyt ja toteutukset.
+// MCP-työkalut: määrittelyt ja toteutukset. Rakenteisten hakulistojen määrittelyt ovat tyokalut.js:ssä.
 
 import {
   fetchText,
@@ -16,6 +16,7 @@ import {
   FinlexError,
 } from "./finlex.js";
 import { parseXml } from "./xml.js";
+import { sivuta, sivutieto } from "./mcp-runko.js";
 import {
   PROPOSAL_INDEX_VERSION,
   buildProposalIndex,
@@ -28,7 +29,7 @@ import {
   findRationale,
 } from "./proposal.js";
 import { parseStatute, futureWarning, finalize, normNum } from "./statute.js";
-import { INDEX_VERSION, buildIndex, buildChapters, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
+import { INDEX_VERSION, buildIndex, buildChapters, buildAttachments, shardOf, findGroups, chapterIndex, sectionNumbers, searchIndex } from "./statuteIndex.js";
 import { EDK_INDEX_VERSION, buildEdkIndex, partOf as edkPartOf, shardsFor as edkShardsFor, blockLabel as edkBlockLabel, blockPath as edkBlockPath, descendants as edkDescendants, findBlocks as edkFindBlocks, parseSection, labelMatches, decisionBlock } from "./edkDoc.js";
 import { EduskuntaError, normTunnus, fetchMatter, fetchDocMeta, fetchDocHtml, docIndexUrl, docWebUrl, matterWebUrl, edkSearch, fetchVote, fetchMatterVotes, searchVotes, voteApiUrl, fetchDocPdfText } from "./eduskunta.js";
 import { tesCatalog, tesDoc, tesWebUrl, tesFileUrl, pdfPages, tocLines, findSections, parsePages, regList, regDoc, regUrl } from "./agreements.js";
@@ -37,6 +38,7 @@ import { KilaError, KILA_BASE, kilaUrlAllowed, kilaSession, searchStatements, gu
 import { AUTHORITIES as OHJE_AUTH, KKV_TYPES, OhjeError, OhjeUserError, authorityOf, isBlockedHost, newBudget, ohjePage, ohjePdf, searchOhjeet } from "./ohjeet.js";
 import { MenError, MEN_SEARCH_PAGE, MEN_PAGE_SIZE, menTaxonomies, menTotal, matchArticles, matchDecision, matchMedia, shortArticle, searchStatements as menSearch, parseMenId, slugByNumber, statementBySlug, overviewSection, findSection } from "./men.js";
 import { KrilError, KRIL_BASE, KRIL_PAGE_SIZE, krilThemes, matchTheme, searchDecisions, krilSlug, decisionBySlug, OVERVIEW as KRIL_OVERVIEW } from "./kril.js";
+import { ReklamaatioVirhe, KSL, SOPIMUSTYYPIT, TILANTEET, LAINKOHDAT_SKEEMA, lainkohdat, lainkohdatTeksti } from "./reklamaatio.js";
 import { HankeikkunaError, searchProjects, projectByTunnus, projectsForProposal, asettajat, projectWebUrl, docText, docKind } from "./hankeikkuna.js";
 import {
   SOURCES,
@@ -53,7 +55,7 @@ import {
 // vie noin 3 merkkiä/token, joten 50 000 merkkiä jättää varaa.
 const MAX_OUTPUT = 50_000;
 
-const commonProps = {
+export const commonProps = {
   vuosi: { type: "integer", description: "Säädöksen vuosi, esim. 1993 (säädösnumerosta 1501/1993)." },
   numero: { type: "string", description: "Säädöksen numero, esim. \"1501\" (säädösnumerosta 1501/1993)." },
   kieli: { type: "string", enum: ["fin", "swe"], description: "Kieliversio: fin (oletus) tai swe." },
@@ -71,21 +73,6 @@ const commonProps = {
 };
 
 export const TOOLS = [
-  {
-    name: "hae_saadoksia",
-    description:
-      "Hakee Finlexistä säädöksiä otsikon tai asiasanan perusteella ja palauttaa säädösnumerot ja nimet. Käytä tätä, kun säädöksen numero ei ole tiedossa. Haku kohdistuu ajantasaistettuun lainsäädäntöön. Otsikkohaku etsii merkkijonoa säädöksen nimestä, ei tekstistä (esim. \"arvonlisävero\", \"työaika\", \"osakeyhtiö\").",
-    inputSchema: {
-      type: "object",
-      properties: {
-        otsikko: { type: "string", description: "Merkkijono, jonka säädöksen nimi sisältää. Kirjainkoolla ei ole väliä." },
-        asiasana: { type: "string", description: "Finlexin asiasana, esim. \"Arvonlisävero\". Valinnainen." },
-        vain_voimassa: { type: "boolean", description: "Vain voimassa olevat säädökset (oletus true)." },
-        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta." },
-        kieli: commonProps.kieli,
-      },
-    },
-  },
   {
     name: "saados_tiedot",
     description:
@@ -106,7 +93,7 @@ export const TOOLS = [
   {
     name: "hae_pykala",
     description:
-      "Palauttaa pykälän tai koko luvun sanatarkan tekstin Finlexistä momentteineen ja kohtineen sekä Finlexin huomautukset (esim. muutosten voimaantulo ja aiempi sanamuoto). Anna pykälä (esim. \"3\", \"3 a\") ja tarvittaessa luku, jos laissa pykälänumerointi alkaa joka luvussa alusta (esim. osakeyhtiölaki: luku \"13\", pykälä \"2\"). Pelkällä luvulla palautetaan koko luku. Kerro säädöksen nimi ja numero, pykälä ja momentti sekä Lähde-linkki ja se, onko teksti ajantasainen vai alkuperäinen ja mihin muutokseen asti se on ajantasaistettu. Jos tulosteessa on HUOM-merkintä tulevasta voimaantulosta tai useampi sanamuoto, kerro se käyttäjälle.",
+      "Palauttaa pykälän tai koko luvun sanatarkan tekstin Finlexistä momentteineen ja kohtineen sekä Finlexin huomautukset (esim. muutosten voimaantulo ja aiempi sanamuoto). Anna pykälä (esim. \"3\", \"3 a\") ja tarvittaessa luku, jos laissa pykälänumerointi alkaa joka luvussa alusta (esim. osakeyhtiölaki: luku \"13\", pykälä \"2\"). Pelkällä luvulla palautetaan koko luku. Parametrilla liite säädöksen liite (esim. terveydensuojelulain liitteen taulukko ilmoituksenvaraisista toiminnoista). Kerro säädöksen nimi ja numero, pykälä ja momentti sekä Lähde-linkki ja se, onko teksti ajantasainen vai alkuperäinen ja mihin muutokseen asti se on ajantasaistettu. Jos tulosteessa on HUOM-merkintä tulevasta voimaantulosta tai useampi sanamuoto, kerro se käyttäjälle.",
     inputSchema: {
       type: "object",
       properties: {
@@ -114,6 +101,7 @@ export const TOOLS = [
         numero: commonProps.numero,
         pykala: { type: "string", description: "Pykälän numero, esim. \"3\" tai \"149 a\"." },
         luku: { type: "string", description: "Luvun numero, esim. \"2\" tai \"2 a\". Valinnainen." },
+        liite: { type: "string", description: "Liitteen järjestysnumero (\"1\" = ensimmäinen) tai \"kaikki\". Valinnainen; ilman pykälää ja lukua." },
         kieli: commonProps.kieli,
         versio: commonProps.versio,
         teksti: commonProps.teksti,
@@ -139,27 +127,6 @@ export const TOOLS = [
     },
   },
   {
-    name: "hae_ratkaisuja",
-    description:
-      "Hakee Finlexistä viranomaisratkaisuja: tietosuojavaltuutettu, eduskunnan oikeusasiamies tai oikeuskansleri. Haku otsikon osalla, asiasanalla ja/tai vuosilla. Palauttaa ratkaisujen numerot, päivämäärät ja otsikot. Tuomioistuinten (KKO, KHO) ratkaisuja Finlexin avoimessa datassa ei ole. Ratkaisut ovat tapauskohtaisia kannanottoja, eivät lakia.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        lahde: {
-          type: "string",
-          enum: ["tietosuojavaltuutettu", "oikeusasiamies", "oikeuskansleri"],
-          description: "Ratkaisija.",
-        },
-        otsikko: { type: "string", description: "Merkkijono, jonka ratkaisun otsikko sisältää (esim. \"kameravalvonta\", \"terveys\")." },
-        asiasana: { type: "string", description: "Finlexin asiasana, esim. \"kameravalvonta\", \"terveystiedot\", \"oikeus tulla unohdetuksi\"." },
-        alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
-        paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
-        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta." },
-      },
-      required: ["lahde"],
-    },
-  },
-  {
     name: "hae_ratkaisu",
     description:
       "Palauttaa yhden viranomaisratkaisun (tietosuojavaltuutettu, oikeusasiamies, oikeuskansleri) tiedot ja tekstin: päivämäärä, diaarinumero, ratkaisija, asiasanat ja koko teksti. Jos ratkaisu on Finlexissä vain PDF:nä, teksti puretaan PDF:stä. Kerro ratkaisun päivämäärä, diaarinumero ja Lähde-linkki. Ratkaisut ovat tapauskohtaisia kannanottoja, eivät lakia.",
@@ -175,20 +142,6 @@ export const TOOLS = [
         numero: { type: "string", description: "Ratkaisun numero hakutuloksesta, esim. \"2443\"." },
       },
       required: ["lahde", "vuosi", "numero"],
-    },
-  },
-  {
-    name: "hae_hallituksen_esityksia",
-    description:
-      "Hakee Finlexistä hallituksen esityksiä otsikon osalla ja/tai vuosilla. Palauttaa tunnukset (HE numero/vuosi) ja otsikot. Säädöksen oman esityksen tunnus löytyy myös saados_tiedot-työkalun Esityöt-rivistä. Finlexin avoimessa datassa ovat esitykset vuodesta 1992.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        otsikko: { type: "string", description: "Merkkijono, jonka esityksen otsikko sisältää, esim. \"arvonlisäverolain\" tai \"sosiaalihuoltolain\"." },
-        alkaen_vuosi: { type: "integer", description: "Ensimmäinen vuosi (valinnainen)." },
-        paattyen_vuosi: { type: "integer", description: "Viimeinen vuosi (valinnainen)." },
-        sivu: { type: "integer", description: "Tulossivu, 1 = ensimmäinen. Sivulla enintään 10 tulosta. Tulokset ovat vuoden ja numeron mukaan vanhimmasta uusimpaan." },
-      },
     },
   },
   {
@@ -302,18 +255,6 @@ export const TOOLS = [
     },
   },
   {
-    name: "hae_tyoehtosopimuksia",
-    description:
-      "Hakee yleissitoviksi vahvistettuja työehtosopimuksia Finlexistä (työehtosopimuksen yleissitovuuden vahvistamislautakunnan päätökset): sopimuksen nimi, työnantaja- ja työntekijäliitot, voimassa oleva sopimuskausi. Ilman hakusanaa listaa kaikki yleissitovat sopimukset. Palauttaa tunnisteen (esim. 2020/19), jolla sopimuksen teksti haetaan tyoehtosopimus-työkalulla. Jos uusin sopimus ei ole vielä Finlexissä, kerro se.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        hakusana: { type: "string", description: "Sana sopimuksen nimestä tai sopijaliiton nimestä, esim. \"sosiaalipalvelu\", \"terveyspalvelu\", \"kauneus\", \"HALI\" tai \"Palta\". Valinnainen." },
-        kaikki: { type: "boolean", description: "true = myös päätökset, joiden yleissitovuus on päättynyt tai joita ei ole vahvistettu. Oletus: vain yleissitovat." },
-      },
-    },
-  },
-  {
     name: "tyoehtosopimus",
     description:
       "Palauttaa yleissitovan työehtosopimuksen tiedot ja tekstiä Finlexistä: sopijaosapuolet, yleissitovuuspäätös ja soveltamisala, sopimusversiot voimassaoloaikoineen ja sopimuksen sisällysluettelo. Parametrilla pykala yksittäinen pykälä (esim. palkat, työaika, lisät, vuosiloma), hakusanalla osumat ja sivut-parametrilla sivualue. Oletuksena käytetään tänään voimassa olevaa sopimusversiota. Teksti puretaan sopimuksen PDF:stä. Kerro sopimuksen nimi, sopimuskausi, pykälä ja PDF:n sivu sekä Lähde-linkki. Yleissitovaa sopimusta on noudatettava vähintään myös järjestäytymättömän työnantajan työsuhteissa (työsopimuslaki 2 luku 7 §; tarkista teksti hae_pykala-työkalulla). Teksti on purettu PDF:stä, joten tarkista palkkataulukoiden luvut PDF:stä. Jos uusin sopimus ei ole vielä Finlexissä, kerro se.",
@@ -357,20 +298,6 @@ export const TOOLS = [
         sivut: { type: "string", description: "PDF:n sivualue, esim. \"3\" tai \"3-6\". Valinnainen." },
       },
       required: ["maarays"],
-    },
-  },
-  {
-    name: "viranomaistiedotteet",
-    description:
-      "Viranomaisten uusimmat tiedotteet yhdestä paikasta: Fimea (lääkkeet, lääkinnälliset laitteet), Tukes (kosmetiikka, kuluttajaturvallisuus, kemikaalit), Lupa- ja valvontavirasto (sote-valvonta, kuluttajansuoja, työsuojelu), Verohallinto (uutiset ja syventävät vero-ohjeet), tietosuojavaltuutettu, Traficomin Kyberturvallisuuskeskus ja KKV sekä hyvinvointialueet, HUS ja Helsingin sote (ei Keski-Pohjanmaata eikä Lappia). Rajaus viranomaisella, hakusanalla ja päivällä. Syötteissä on vain uusimmat tiedotteet. Kerro viranomainen, päivä, otsikko ja linkki. Tiedote on viranomaisen viestintää, ei säädös; tarkista määräykset ja lait niiden omilla työkaluilla. Tiedotteen tekstin saa viranomaistiedote-työkalulla, ei kuitenkaan Fimean eikä Tukesin tiedotteista.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        viranomainen: { type: "string", description: "fimea, tukes, lvv, vero, vero_ohjeet, tietosuoja, kyber, kkv; hyvinvointialue: hyvinvointialueet (kaikki), hus, helsinki, ita_uusimaa, keski_uusimaa, lansi_uusimaa, vantaa_kerava, varsinais_suomi, satakunta, kanta_hame, pirkanmaa, paijat_hame, kymenlaakso, etela_karjala, etela_savo, pohjois_savo, pohjois_karjala, keski_suomi, etela_pohjanmaa, pohjanmaa, keski_pohjanmaa, pohjois_pohjanmaa, kainuu. Oletus: valtion viranomaiset ilman hyvinvointialueita; kaikki = myös hyvinvointialueet. Useita pilkulla erotettuna." },
-        hakusana: { type: "string", description: "Sana otsikosta tai tiivistelmästä, esim. \"kosmet\" tai \"arvonlisävero\". Valinnainen." },
-        alkaen: { type: "string", description: "Tiedotteet alkaen (vvvv-kk-pp). Valinnainen." },
-        enintaan: { type: "integer", description: "Montako näytetään (oletus 20, enintään 60)." },
-      },
     },
   },
   {
@@ -583,18 +510,30 @@ export const TOOLS = [
       required: ["hanke", "asiakirja"],
     },
   },
+  {
+    name: "reklamaation_lainkohdat",
+    description:
+      "Kuluttajansuojalain (38/1978) pykälät reklamaatiotilanteeseen: anna sopimustyyppi (tavara, digitaalinen, esinepalvelu, muu_palvelu tai etamyynti) ja tilanne (virhe, viivastys tai peruutus). Palauttaa sovellettavat pykälät ajantasaisena tekstinä Finlexistä (pitkät katkaistuna), merkinnän soveltuvatko ne suoraan vai vain periaatteina (esim. kauneushoito ja muut ihmiseen kohdistuvat palvelut) sekä hakusanat Kuluttajariitalautakunnan ratkaisuihin. Kerro pykälät, soveltuminen ja Lähde-linkki; tieto on yleistä, ei oikeudellista neuvontaa.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sopimustyyppi: { type: "string", enum: Object.keys(SOPIMUSTYYPIT), description: Object.entries(SOPIMUSTYYPIT).map(([k, v]) => `${k}: ${v}`).join("; ") + "." },
+        tilanne: { type: "string", enum: Object.keys(TILANTEET), description: "virhe, viivastys tai peruutus." },
+      },
+      required: ["sopimustyyppi", "tilanne"],
+    },
+    outputSchema: LAINKOHDAT_SKEEMA,
+  },
 ];
 
 // Työkalujen merkinnät (MCP tool annotations): kaikki työkalut vain lukevat
 // julkista dataa eivätkä muuta mitään.
 const TITLES = {
-  hae_saadoksia: "Hae säädöksiä",
   saados_tiedot: "Säädöksen tiedot",
   hae_pykala: "Hae pykälä",
+  reklamaation_lainkohdat: "Reklamaation lainkohdat",
   etsi_saadoksesta: "Etsi säädöksen tekstistä",
-  hae_ratkaisuja: "Hae viranomaisratkaisuja",
   hae_ratkaisu: "Hae viranomaisratkaisu",
-  hae_hallituksen_esityksia: "Hae hallituksen esityksiä",
   hallituksen_esitys: "Hallituksen esitys",
   etsi_hallituksen_esityksesta: "Etsi hallituksen esityksestä",
   eduskuntakasittely: "Eduskuntakäsittely",
@@ -605,11 +544,9 @@ const TITLES = {
   hae_lainvalmisteluhankkeita: "Hae lainvalmisteluhankkeita",
   lainvalmisteluhanke: "Lainvalmisteluhanke",
   lainvalmistelun_asiakirja: "Lainvalmistelun asiakirja",
-  hae_tyoehtosopimuksia: "Hae työehtosopimuksia",
   tyoehtosopimus: "Työehtosopimus",
   hae_viranomaismaarayksia: "Hae viranomaisten määräyksiä",
   viranomaismaarays: "Viranomaisen määräys",
-  viranomaistiedotteet: "Viranomaisten tiedotteet",
   viranomaistiedote: "Viranomaisen tiedote",
   hae_vero_ohjeita: "Hae vero-ohjeita",
   hae_viranomaisohjeita: "Hae viranomaisten ohjeita",
@@ -814,6 +751,15 @@ async function loadChapters(s) {
   return chapters;
 }
 
+/** Liitteiden muotoiltu teksti. Erillinen osa; tarvitaan harvoin. */
+async function loadAttachments(s) {
+  let atts = await getPart(s.requestedUrl, "att", s.ttl);
+  if (Array.isArray(atts)) return atts;
+  atts = buildAttachments(await loadDoc(s));
+  await putParts(s.requestedUrl, s.ttl, { att: atts });
+  return atts;
+}
+
 function header(s) {
   const { meta, year, number, lang, original, fellBack } = s;
   const lines = [];
@@ -851,7 +797,26 @@ function clip(text) {
 
 // ---------- Toteutukset ----------
 
-async function haeSaadoksia(args) {
+// ---------- Hakulistat rakenteisina (koodiajo-valmius) ----------
+//
+// hae_saadoksia, hae_hallituksen_esityksia, hae_ratkaisuja, hae_tyoehtosopimuksia ja viranomaistiedotteet palauttavat
+// datan, ja teksti muotoillaan datasta (tulosteet ennallaan). Määrittelyt ja tulosskeemat: tyokalut.js.
+// Finlex sivuttaa 10 riviä sivulla eikä kerro kokonaismäärää: täysi sivu (10 riviä) tarkoittaa, että seuraava sivu
+// voi olla olemassa, joten sivuja on silloin vähintään sivu + 1. Tyhjällä liian suurella sivulla sivuja on
+// max(1, sivu - 1). lahteenRiveja (lähteen rivit ennen tunnusten tulkintaa) on vain tekstiä varten, ei rakenteessa.
+
+export const FINLEX_LAHDE = { nimi: "Finlex, avoin data (oikeusministeriö)", linkki: "https://www.finlex.fi/" };
+
+function sivutus(page, listLength) {
+  if (!listLength) {
+    const s = sivutieto({ sivu: page });
+    return { sivu: s.sivu, sivuja: Math.max(1, s.sivu - 1), seuraava: null };
+  }
+  const s = sivutieto({ sivu: page, sivuja: listLength >= 10 ? page + 1 : page });
+  return { sivu: s.sivu, sivuja: s.sivuja, seuraava: s.seuraava };
+}
+
+export async function haeSaadoksia(args) {
   const lang = asLang(args.kieli);
   if (!args.otsikko && !args.asiasana) throw new UserError("Anna otsikko tai asiasana.");
   const page = asPage(args.sivu);
@@ -864,9 +829,6 @@ async function haeSaadoksia(args) {
   };
   if (args.vain_voimassa !== false) params.isInForce = "true";
   const list = await fetchListPage(listUrl("statute-consolidated", params), page);
-  if (!list.length) {
-    return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. \"työaika\" eikä \"työaikalaki 2019\") tai vain_voimassa=false.";
-  }
   const seen = new Set();
   const items = [];
   for (const it of list) {
@@ -880,14 +842,26 @@ async function haeSaadoksia(args) {
   const heads = await Promise.all(
     items.map((it) => fetchHead(consolidatedUrl(it.year, it.number, lang, "latest")).catch(() => null)),
   );
-  const lines = items.map((it, i) => {
+  const saadokset = items.map((it, i) => {
     const h = heads[i];
-    const title = h?.title ?? "(nimi ei saatavilla)";
-    const force = h?.inForce === "false" ? " (ei voimassa)" : "";
-    return `${it.id} ${title}${force}`;
+    const rivi = { tunnus: it.id, vuosi: Number(it.year), numero: it.number };
+    if (h?.title) rivi.nimi = h.title;
+    if (h?.inForce === "false") rivi.voimassa = false;
+    else if (h?.inForce === "true") rivi.voimassa = true;
+    rivi.linkki = webUrl(it.year, it.number, lang);
+    return rivi;
   });
+  return { saadokset, ...sivutus(page, list.length), lahde: FINLEX_LAHDE, lahteenRiveja: list.length };
+}
+
+export function haeSaadoksiaTeksti(data) {
+  const page = data.sivu;
+  if (!data.lahteenRiveja) {
+    return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. \"työaika\" eikä \"työaikalaki 2019\") tai vain_voimassa=false.";
+  }
+  const lines = data.saadokset.map((r) => `${r.tunnus} ${r.nimi ?? "(nimi ei saatavilla)"}${r.voimassa === false ? " (ei voimassa)" : ""}`);
   let out = `Hakutulokset (sivu ${page}):\n` + lines.join("\n");
-  if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1}.`;
+  if (data.seuraava) out += `\n\nLisää tuloksia voi olla: hae sivu ${data.seuraava}.`;
   out += "\n\nHae teksti työkaluilla saados_tiedot tai hae_pykala (vuosi ja numero).";
   return out;
 }
@@ -943,10 +917,26 @@ async function saadosTiedot(args) {
 }
 
 async function haePykala(args) {
-  if (!args.pykala && !args.luku) throw new UserError("Anna pykälä, luku tai molemmat.");
+  const liite = args.liite !== undefined && args.liite !== null && String(args.liite).trim() !== "" ? String(args.liite).trim().toLowerCase() : null;
+  if (!args.pykala && !args.luku && !liite) throw new UserError("Anna pykälä, luku tai liite.");
+  if (liite && (args.pykala || args.luku)) throw new UserError("Anna joko liite tai pykälä ja luku, ei molempia.");
   const s = await loadStatute(args);
   const fin = (t) => finalize(t, s.future);
   const out = [header(s), ""];
+  if (liite) {
+    const atts = await loadAttachments(s);
+    if (!atts.length) throw new UserError("Säädöksessä ei ole liitteitä Finlexin avoimessa datassa.");
+    if (liite === "kaikki") {
+      out.push(fin(atts.map((a) => a.t).join("\n\n----\n\n")));
+    } else {
+      const n = Number(liite);
+      if (!Number.isInteger(n) || n < 1 || n > atts.length) {
+        throw new UserError(`Liitettä ${args.liite} ei ole. Säädöksessä on ${atts.length} ${atts.length === 1 ? "liite" : "liitettä"}: ${atts.map((a, i) => `${i + 1} ${a.h}`).join("; ")}.`);
+      }
+      out.push(fin(atts[n - 1].t));
+    }
+    return clip(out.join("\n"));
+  }
   if (args.pykala) {
     const groups = findGroups(s.base, await loadShard(s, args.pykala), args.pykala, args.luku);
     if (!groups.length) {
@@ -993,8 +983,17 @@ async function etsiSaadoksesta(args) {
     return d ? `, EI VIELÄ VOIMASSA, voimaan ${d}` : "";
   };
   const out = [header(s), ""];
-  if (!hits.length) {
-    out.push(`Hakusanaa "${q}" ei löytynyt pykälien tekstistä. Kokeile sanan vartaloa tai synonyymiä.`);
+  // Liitteet (esim. taulukot) haetaan erikseen, koska ne eivät ole pykäliä.
+  const ql = q.toLowerCase();
+  const liiteOsumat = [];
+  (await loadAttachments(s)).forEach((a, i) => {
+    const rivit = a.t.split("\n").filter((r) => r.toLowerCase().includes(ql));
+    if (rivit.length) liiteOsumat.push({ i: i + 1, h: a.h, rivit: rivit.slice(0, 5) });
+  });
+  if (!hits.length && !liiteOsumat.length) {
+    out.push(`Hakusanaa "${q}" ei löytynyt pykälien eikä liitteiden tekstistä. Kokeile sanan vartaloa tai synonyymiä.`);
+  } else if (!hits.length) {
+    out.push(`Hakusanaa "${q}" ei löytynyt pykälien tekstistä.`);
   } else {
     out.push(`Osumat hakusanalle "${q}" (${hits.length}${hits.length >= 30 ? "+, näytetään 30" : ""}):`);
     for (const h of hits) {
@@ -1003,6 +1002,10 @@ async function etsiSaadoksesta(args) {
       const ver = h.versionLabel ? ` [sanamuoto: ${h.versionLabel}${futureOf(h.versionLabel)}]` : "";
       out.push("", `${loc}${head}${ver}`, `  ${h.snippet}`);
     }
+  }
+  if (liiteOsumat.length) {
+    out.push("", `Osumat liitteissä (koko liite: hae_pykala, liite):`);
+    for (const o of liiteOsumat) out.push("", `Liite ${o.i}: ${o.h}`, ...o.rivit.map((r) => `  ${r.trim().slice(0, 300)}`));
   }
   return clip(out.join("\n"));
 }
@@ -1103,7 +1106,7 @@ function proposalHeader(s) {
 
 const blockLabel = (b) => [b.num, b.heading].filter(Boolean).join(" ") || "(otsikoton lohko)";
 
-async function haeHallituksenEsityksia(args) {
+export async function haeHallituksenEsityksia(args) {
   if (!args.otsikko && !args.alkaen_vuosi && !args.paattyen_vuosi) throw new UserError("Anna otsikko tai vuosi.");
   const page = asPage(args.sivu);
   const params = {
@@ -1115,7 +1118,6 @@ async function haeHallituksenEsityksia(args) {
     // Ei sortBy-parametria: lastSeen-sivutus ei toimi sen kanssa (Finlex palauttaa 0 tulosta, 22.11.2026).
   };
   const list = await fetchListPage(docListUrl("government-proposal", params), page);
-  if (!list.length) return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. sanan vartaloa \"arvonlisävero\").";
   const items = [];
   const seen = new Set();
   for (const it of list) {
@@ -1125,9 +1127,21 @@ async function haeHallituksenEsityksia(args) {
     items.push({ year: m[1], number: m[2] });
   }
   const heads = await Promise.all(items.map((it) => fetchHead(proposalUrl(it.year, it.number, "fin")).catch(() => null)));
-  const lines = items.map((it, i) => `HE ${it.number}/${it.year} ${heads[i]?.title ?? "(otsikko ei saatavilla)"}`);
+  const esitykset = items.map((it, i) => {
+    const rivi = { tunnus: `HE ${it.number}/${it.year}`, vuosi: Number(it.year), numero: it.number };
+    if (heads[i]?.title) rivi.otsikko = heads[i].title;
+    rivi.linkki = proposalWebUrl(it.year, it.number);
+    return rivi;
+  });
+  return { esitykset, ...sivutus(page, list.length), lahde: FINLEX_LAHDE, lahteenRiveja: list.length };
+}
+
+export function haeHallituksenEsityksiaTeksti(data) {
+  const page = data.sivu;
+  if (!data.lahteenRiveja) return page > 1 ? "Ei enempää tuloksia." : "Ei osumia. Kokeile lyhyempää otsikon osaa (esim. sanan vartaloa \"arvonlisävero\").";
+  const lines = data.esitykset.map((r) => `${r.tunnus} ${r.otsikko ?? "(otsikko ei saatavilla)"}`);
   let out = `Hallituksen esitykset (sivu ${page}, vuoden ja numeron mukaan vanhimmasta uusimpaan):\n` + lines.join("\n");
-  if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1}.`;
+  if (data.seuraava) out += `\n\nLisää tuloksia voi olla: hae sivu ${data.seuraava}.`;
   out += "\n\nHae esitys työkalulla hallituksen_esitys (vuosi ja numero).";
   return out;
 }
@@ -1962,7 +1976,7 @@ function feedKeys(arg) {
   return [...new Set(keys)];
 }
 
-async function viranomaistiedotteet(args) {
+export async function viranomaistiedotteet(args) {
   const keys = feedKeys(args.viranomainen);
   const from = args.alkaen ? asIsoDate(args.alkaen, "alkaen") : null;
   const q = String(args.hakusana ?? "").trim().toLowerCase();
@@ -1972,34 +1986,61 @@ async function viranomaistiedotteet(args) {
   if (from) all = all.filter((i) => i.date && i.date.slice(0, 10) >= from);
   if (q) all = all.filter((i) => `${i.title} ${i.summary ?? ""}`.toLowerCase().includes(q));
   all.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
-  const failed = results.filter((r) => r.err);
-  const span = results
+  const syotteet = results
     .filter((r) => r.items.length)
     .map((r) => {
       const ds = r.items.map((i) => i.date).filter(Boolean).sort();
-      return `${FEEDS[r.k].short} ${r.items.length} (alkaen ${ds.length ? fmtDate(ds[0].slice(0, 10)) : "?"})`;
-    })
-    .join(", ");
-  const crit = [q && `hakusana "${args.hakusana}"`, from && `alkaen ${fmtDate(from)}`].filter(Boolean).join(", ");
-  const out = [`Viranomaisten tiedotteet${crit ? ` (${crit})` : ""}: ${all.length} osumaa${all.length > max ? `, näytetään ${max} uusinta` : ""}.`];
+      const rivi = { viranomainen: FEEDS[r.k].short, maara: r.items.length };
+      if (ds.length) rivi.alkaen = ds[0].slice(0, 10);
+      return rivi;
+    });
+  const tiedotteet = all.slice(0, max).map((i) => {
+    const rivi = {};
+    if (i.date) rivi.paiva = i.date.slice(0, 10);
+    rivi.viranomainen = FEEDS[i.source].short;
+    rivi.otsikko = i.title;
+    if (i.summary) rivi.tiivistelma = i.summary.length > 400 ? `${i.summary.slice(0, 400)}…` : i.summary;
+    rivi.linkki = i.link;
+    return rivi;
+  });
+  const hvaKeys = keys.filter((k) => FEEDS[k].hva);
+  const data = {
+    tiedotteet,
+    yhteensa: all.length,
+    naytetaan: tiedotteet.length,
+    syotteet,
+    puuttuvat: results.filter((r) => r.err).map((r) => ({ viranomainen: FEEDS[r.k].short, syy: r.err })),
+  };
+  if (from) data.alkaen = from;
+  data.valtion_viranomaiset = keys.length > hvaKeys.length;
+  data.hyvinvointialueet = hvaKeys.map((k) => ({ nimi: FEEDS[k].name, palvelu: FEEDS[k].url.includes("sttinfo.fi") ? "STT Info" : new URL(FEEDS[k].url).hostname }));
+  data.lahde = { nimi: "Viranomaisten tiedotesyötteet (RSS ja STT Info)" };
+  return data;
+}
+
+export function viranomaistiedotteetTeksti(data, args = {}) {
+  const q = String(args.hakusana ?? "").trim().toLowerCase();
+  const crit = [q && `hakusana "${args.hakusana}"`, data.alkaen && `alkaen ${fmtDate(data.alkaen)}`].filter(Boolean).join(", ");
+  const n = data.yhteensa;
+  const out = [`Viranomaisten tiedotteet${crit ? ` (${crit})` : ""}: ${n} osumaa${n > data.naytetaan ? `, näytetään ${data.naytetaan} uusinta` : ""}.`];
+  const span = data.syotteet.map((r) => `${r.viranomainen} ${r.maara} (alkaen ${r.alkaen ? fmtDate(r.alkaen) : "?"})`).join(", ");
   if (span) out.push(`Syötteissä nyt: ${span}. Syötteet sisältävät vain uusimmat tiedotteet.`);
-  for (const f of failed) out.push(`HUOM: ${FEEDS[f.k].short}-syötettä ei saatu (${f.err}).`);
+  for (const f of data.puuttuvat) out.push(`HUOM: ${f.viranomainen}-syötettä ei saatu (${f.syy}).`);
   out.push("");
-  for (const i of all.slice(0, max)) {
-    out.push(`${i.date ? fmtDate(i.date.slice(0, 10)) : "?"} · ${FEEDS[i.source].short} · ${i.title}`);
-    if (i.summary) out.push(`  ${i.summary.length > 400 ? `${i.summary.slice(0, 400)}…` : i.summary}`);
-    out.push(`  ${i.link}`);
+  for (const i of data.tiedotteet) {
+    out.push(`${i.paiva ? fmtDate(i.paiva) : "?"} · ${i.viranomainen} · ${i.otsikko}`);
+    if (i.tiivistelma) out.push(`  ${i.tiivistelma}`);
+    out.push(`  ${i.linkki}`);
   }
-  if (!all.length) out.push("Ei osumia. Syötteissä on vain uusimmat tiedotteet; vanhempia etsi viraston verkkosivuilta.");
+  if (!n) out.push("Ei osumia. Syötteissä on vain uusimmat tiedotteet; vanhempia etsi viraston verkkosivuilta.");
   out.push(
     "",
     "Tiedotteen tekstin saa viranomaistiedote-työkalulla (osoite); Fimean ja Tukesin tiedotteet luetaan viraston sivulta. Kaikki syventävät vero-ohjeet löytyvät hae_vero_ohjeita-työkalulla ja muiden viranomaisten ohjeet hae_viranomaisohjeita-työkalulla.",
   );
-  const hvaKeys = keys.filter((k) => FEEDS[k].hva);
-  if (keys.length > hvaKeys.length) out.push("Lähteet: Fimea, Tukes, Verohallinto, tietosuojavaltuutettu, Kyberturvallisuuskeskus ja KKV (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).");
-  if (hvaKeys.length) {
-    out.push(`Lähteet, hyvinvointialueet: ${hvaKeys.map((k) => `${FEEDS[k].name} (${FEEDS[k].url.includes("sttinfo.fi") ? "STT Info" : new URL(FEEDS[k].url).hostname})`).join("; ")}.`);
-    if (hvaKeys.length > 1) out.push(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}.`);
+  if (data.valtion_viranomaiset) out.push("Lähteet: Fimea, Tukes, Verohallinto, tietosuojavaltuutettu, Kyberturvallisuuskeskus ja KKV (RSS-syötteet), Lupa- ja valvontavirasto (STT Info).");
+  if (data.hyvinvointialueet.length) {
+    out.push(`Lähteet, hyvinvointialueet: ${data.hyvinvointialueet.map((h) => `${h.nimi} (${h.palvelu})`).join("; ")}.`);
+    if (data.hyvinvointialueet.length > 1) out.push(`Hyvinvointialueilta puuttuvat ${HVA_MISSING}.`);
   }
   return clip(out.join("\n"));
 }
@@ -2701,17 +2742,17 @@ async function loadDecision(src, year, number) {
   return parseDecision(xml);
 }
 
-async function haeRatkaisuja(args) {
+export async function haeRatkaisuja(args) {
   const src = asSource(args.lahde);
   const page = asPage(args.sivu);
   let start = args.alkaen_vuosi ? asYear(args.alkaen_vuosi) : undefined;
   let end = args.paattyen_vuosi ? asYear(args.paattyen_vuosi) : undefined;
-  let note = "";
+  let oletusvuodet = null;
   if (!args.otsikko && !args.asiasana && !start && !end) {
     const y = new Date().getUTCFullYear();
     start = y - 1;
     end = y;
-    note = ` (ei hakuehtoja, näytetään vuodet ${start}–${end})`;
+    oletusvuodet = { alkaen: start, paattyen: end };
   }
   const params = {
     titleContains: args.otsikko,
@@ -2722,11 +2763,6 @@ async function haeRatkaisuja(args) {
     // Ei sortBy-parametria: lastSeen-sivutus ei toimi sen kanssa (Finlex palauttaa 0 tulosta, 22.11.2026).
   };
   const list = await fetchListPage(decisionListUrl(src, params), page);
-  if (!list.length) {
-    return page > 1
-      ? "Ei enempää tuloksia."
-      : "Ei osumia. Kokeile lyhyempää otsikon osaa, toista asiasanaa tai laajempaa vuosiväliä.";
-  }
   const items = [];
   const seen = new Set();
   for (const it of list) {
@@ -2736,14 +2772,37 @@ async function haeRatkaisuja(args) {
     items.push({ year: m[1], number: m[2] });
   }
   const docs = await Promise.all(items.map((it) => loadDecision(src, it.year, it.number).catch(() => null)));
-  const rows = items.map((it, i) => {
+  const ratkaisut = items.map((it, i) => {
     const d = docs[i];
-    const date = d?.dateIssued ? fmtDate(d.dateIssued) : "?";
-    const diary = d?.diaryNumber ? ` (${d.diaryNumber})` : "";
-    return `vuosi ${it.year}, numero ${it.number}: ${date} ${d?.title ?? "(otsikko ei saatavilla)"}${diary}`;
+    const rivi = { vuosi: Number(it.year), numero: it.number };
+    if (d?.dateIssued) rivi.paiva = d.dateIssued;
+    if (d?.title) rivi.otsikko = d.title;
+    if (d?.diaryNumber) rivi.diaarinumero = d.diaryNumber;
+    rivi.linkki = decisionWebUrl(src, it.year, it.number);
+    return rivi;
   });
-  let out = `${src.label}, hakutulokset (sivu ${page})${note}. Järjestys: vuoden ja numeron mukaan, vanhimmasta uusimpaan.\n` + rows.join("\n");
-  if (list.length >= 10) out += `\n\nLisää tuloksia voi olla: hae sivu ${page + 1} tai rajaa vuosilla.`;
+  const data = { ratkaisija: src.label, ratkaisut, ...sivutus(page, list.length) };
+  if (oletusvuodet) data.oletusvuodet = oletusvuodet;
+  data.lahde = FINLEX_LAHDE;
+  data.lahteenRiveja = list.length;
+  return data;
+}
+
+export function haeRatkaisujaTeksti(data) {
+  const page = data.sivu;
+  if (!data.lahteenRiveja) {
+    return page > 1
+      ? "Ei enempää tuloksia."
+      : "Ei osumia. Kokeile lyhyempää otsikon osaa, toista asiasanaa tai laajempaa vuosiväliä.";
+  }
+  const note = data.oletusvuodet ? ` (ei hakuehtoja, näytetään vuodet ${data.oletusvuodet.alkaen}–${data.oletusvuodet.paattyen})` : "";
+  const rows = data.ratkaisut.map((r) => {
+    const date = r.paiva ? fmtDate(r.paiva) : "?";
+    const diary = r.diaarinumero ? ` (${r.diaarinumero})` : "";
+    return `vuosi ${r.vuosi}, numero ${r.numero}: ${date} ${r.otsikko ?? "(otsikko ei saatavilla)"}${diary}`;
+  });
+  let out = `${data.ratkaisija}, hakutulokset (sivu ${page})${note}. Järjestys: vuoden ja numeron mukaan, vanhimmasta uusimpaan.\n` + rows.join("\n");
+  if (data.seuraava) out += `\n\nLisää tuloksia voi olla: hae sivu ${data.seuraava} tai rajaa vuosilla.`;
   out += "\n\nHae ratkaisun teksti työkalulla hae_ratkaisu (lahde, vuosi, numero).";
   return out;
 }
@@ -3228,25 +3287,59 @@ function tesStatus(c, today) {
   return "yleissitova";
 }
 
-async function haeTyoehtosopimuksia(args) {
+export const TES_LAHDE = {
+  nimi: "Finlex, työehtosopimusten yleissitovuuspäätökset (CC BY 4.0)",
+  linkki: "https://www.finlex.fi/fi/viranomaiset/tyoehtosopimukset",
+};
+
+const TES_RAKENNE_MAX = 50;
+
+export async function haeTyoehtosopimuksia(args) {
   const all = await tesCatalog();
   const today = finnishToday();
   const q = lcFold(args.hakusana);
   const words = q ? q.split(" ").filter(Boolean) : [];
   let rows = all.filter((c) => (args.kaikki === true || c.uni !== false) && (!words.length || tesMatches(c, words)));
   rows.sort((a, b) => cmpStr(lcFold(a.title), lcFold(b.title)) || b.y - a.y);
-  const head = `Yleissitovat työehtosopimukset Finlexissä${q ? ` (hakusana "${args.hakusana}")` : ""}${args.kaikki ? ", myös päättyneet" : ""}: ${rows.length} kpl.`;
-  if (!rows.length) return `${head}\n\nEi osumia. Kokeile sanan osaa (esim. "sosiaali") tai liiton nimeä, tai kaikki: true.`;
+  const sopimukset = rows.map((c) => {
+    const rivi = { tunnus: `${c.y}/${c.n}`, nimi: c.title };
+    if (c.employer !== undefined && c.employer !== null) rivi.tyonantajat = c.employer;
+    if (c.employee !== undefined && c.employee !== null) rivi.tyontekijat = c.employee;
+    rivi.yleissitova = c.uni !== false;
+    rivi.tila = tesStatus(c, today);
+    const cur = currentVersion(c, today);
+    if (cur) {
+      rivi.voimassa_oleva_kausi = dateRange(cur.a, cur.l);
+      if (cur.a) rivi.kausi_alkaa = cur.a;
+      if (cur.l) rivi.kausi_paattyy = cur.l;
+    }
+    return rivi;
+  });
+  // Ilman hakusanaa pitkä lista näytetään tekstinä tiiviisti (rivi sopimusta kohden). Rakenteiseen tulokseen enintään
+  // TES_RAKENNE_MAX ensimmäistä (rajattu: true, kun lista on pidempi); teksti näyttää kaikki kuten ennen (kaikkiRivit).
+  const s = sivuta(sopimukset, { sivu: 1, koko: TES_RAKENNE_MAX, enintaan: TES_RAKENNE_MAX });
+  return {
+    sopimukset: s.rivit,
+    yhteensa: s.yhteensa,
+    rajattu: s.seuraava !== null,
+    tiivis: !words.length && sopimukset.length > 40,
+    lahde: TES_LAHDE,
+    kaikkiRivit: sopimukset,
+  };
+}
+
+export function haeTyoehtosopimuksiaTeksti(data, args = {}) {
+  const q = lcFold(args.hakusana);
+  const head = `Yleissitovat työehtosopimukset Finlexissä${q ? ` (hakusana "${args.hakusana}")` : ""}${args.kaikki ? ", myös päättyneet" : ""}: ${data.yhteensa} kpl.`;
+  if (!data.yhteensa) return `${head}\n\nEi osumia. Kokeile sanan osaa (esim. "sosiaali") tai liiton nimeä, tai kaikki: true.`;
   const out = [head, ""];
-  const compact = !words.length && rows.length > 40;
-  for (const c of rows) {
-    if (compact) {
-      const cur = currentVersion(c, today);
-      out.push(`${c.y}/${c.n} ${c.title}${c.employer ? ` (${c.employer}${cur ? `; ${dateRange(cur.a, cur.l)}` : ""})` : ""}`);
+  for (const c of data.kaikkiRivit ?? data.sopimukset) {
+    if (data.tiivis) {
+      out.push(`${c.tunnus} ${c.nimi}${c.tyonantajat ? ` (${c.tyonantajat}${c.voimassa_oleva_kausi !== undefined ? `; ${c.voimassa_oleva_kausi}` : ""})` : ""}`);
     } else {
-      out.push(`${c.y}/${c.n} ${c.title}`);
-      out.push(`  Työnantaja: ${c.employer ?? "?"} | Työntekijät: ${c.employee ?? "?"}`);
-      out.push(`  ${tesStatus(c, today)}`);
+      out.push(`${c.tunnus} ${c.nimi}`);
+      out.push(`  Työnantaja: ${c.tyonantajat ?? "?"} | Työntekijät: ${c.tyontekijat ?? "?"}`);
+      out.push(`  ${c.tila}`);
     }
   }
   out.push("", "Sopimuksen teksti, pykälät ja soveltamisala: tyoehtosopimus-työkalulla (sopimus: tunniste, esim. \"2020/19\").");
@@ -3757,14 +3850,29 @@ async function menLausunto(args) {
   return clip([...out, ...tail].join("\n"));
 }
 
+// reklamaation_lainkohdat: kartta ja muotoilu src/reklamaatio.js:ssä; tässä vain Finlex-haku (sama kuin hae_pykala).
+async function reklamaationLainkohdat(args) {
+  const s = await loadStatute({ vuosi: KSL.vuosi, numero: KSL.numero });
+  const haeTeksti = async (luku, pykala) => {
+    const groups = findGroups(s.base, await loadShard(s, pykala), pykala, luku);
+    return groups.length ? finalize(groups.map((g) => g.r).join("\n\n"), s.future) : "";
+  };
+  let data;
+  try {
+    data = await lainkohdat(args, { haeTeksti, saados: async () => ({ otsikko: header(s), lahde: webUrl(s.year, s.number, s.lang, s.original) }) });
+  } catch (e) {
+    if (e instanceof ReklamaatioVirhe) throw new UserError(e.message);
+    throw e;
+  }
+  return { teksti: clip(lainkohdatTeksti(data)), data };
+}
+
 const HANDLERS = {
-  hae_saadoksia: haeSaadoksia,
   saados_tiedot: saadosTiedot,
   hae_pykala: haePykala,
+  reklamaation_lainkohdat: reklamaationLainkohdat,
   etsi_saadoksesta: etsiSaadoksesta,
-  hae_ratkaisuja: haeRatkaisuja,
   hae_ratkaisu: haeRatkaisu,
-  hae_hallituksen_esityksia: haeHallituksenEsityksia,
   hallituksen_esitys: hallituksenEsitys,
   etsi_hallituksen_esityksesta: etsiHallituksenEsityksesta,
   eduskuntakasittely: eduskuntakasittely,
@@ -3775,11 +3883,9 @@ const HANDLERS = {
   hae_lainvalmisteluhankkeita: haeLainvalmisteluhankkeita,
   lainvalmisteluhanke: lainvalmisteluhanke,
   lainvalmistelun_asiakirja: lainvalmistelunAsiakirja,
-  hae_tyoehtosopimuksia: haeTyoehtosopimuksia,
   tyoehtosopimus: tyoehtosopimus,
   hae_viranomaismaarayksia: haeViranomaismaarayksia,
   viranomaismaarays: viranomaismaarays,
-  viranomaistiedotteet,
   viranomaistiedote,
   hae_vero_ohjeita: haeVeroOhjeita,
   hae_viranomaisohjeita: haeViranomaisohjeita,
@@ -3792,41 +3898,41 @@ const HANDLERS = {
   men_lausunto: menLausunto,
 };
 
+/**
+ * Liittimen virheen näytettävä teksti ja koodi (callTool ja tyokalut.js käyttävät samaa, jotta tekstit pysyvät samoina).
+ * null: odottamaton poikkeus, jonka tekstiä ei näytetä eikä kirjata.
+ */
+export function virheTeksti(e) {
+  const lahde = (teksti) => ({ teksti, koodi: "lahde", lahteen_koodi: e?.status ? String(e.status) : undefined });
+  if (e instanceof UserError) return { teksti: e.message, koodi: "syote" };
+  if (e instanceof EduskuntaError) return lahde(`Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof KilaError) return lahde(`Kirjanpitolautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof KrilError) return lahde(`Kuluttajariitalautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof MenError) return lahde(`Mainonnan eettisen neuvoston lausuntojen haku kauppakamari.fi:stä epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof OhjeUserError) return { teksti: e.message, koodi: "syote" };
+  if (e instanceof OhjeError) return lahde(`Ohjeen haku viranomaisen sivustolta epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof TiedoteError) return lahde(`Tiedotteiden haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof HankeikkunaError) return lahde(`Hankeikkunan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  if (e instanceof FinlexError) return lahde(`Finlex-haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`);
+  return null;
+}
+
 export async function callTool(name, args = {}) {
   const fn = HANDLERS[name];
   if (!fn) return { isError: true, content: [{ type: "text", text: `Tuntematon työkalu: ${name}` }] };
   try {
-    const text = await fn(args ?? {});
-    return { content: [{ type: "text", text }] };
+    const tulos = await fn(args ?? {});
+    // Rakenteinen tulos (koodiajo-valmius): käsittelijä voi palauttaa { teksti, data }, kun työkalulla on outputSchema.
+    if (tulos && typeof tulos === "object") return { content: [{ type: "text", text: tulos.teksti }], structuredContent: tulos.data };
+    return { content: [{ type: "text", text: tulos }] };
   } catch (e) {
-    const msg =
-      e instanceof UserError
-        ? e.message
-        : e instanceof EduskuntaError
-          ? `Eduskunnan rajapinnan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof KilaError
-          ? `Kirjanpitolautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof KrilError
-          ? `Kuluttajariitalautakunnan sivuston haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof MenError
-          ? `Mainonnan eettisen neuvoston lausuntojen haku kauppakamari.fi:stä epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof OhjeUserError
-          ? e.message
-          : e instanceof OhjeError
-          ? `Ohjeen haku viranomaisen sivustolta epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof TiedoteError
-          ? `Tiedotteiden haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof HankeikkunaError
-          ? `Hankeikkunan haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : e instanceof FinlexError
-          ? `Finlex-haku epäonnistui: ${e.message}. Yritä hetken päästä uudelleen.`
-          : null;
-    if (msg === null) {
+    const v = virheTeksti(e);
+    if (v === null) {
       // Odottamaton poikkeus: sisäistä tekstiä ei näytetä eikä kirjata (voi sisältää rajapintojen tietoja).
       console.error("tyokalu:", name, e?.name ?? "virhe");
       return { isError: true, content: [{ type: "text", text: YLEINEN_VIRHE }] };
     }
-    return { isError: true, content: [{ type: "text", text: msg }] };
+    return { isError: true, content: [{ type: "text", text: v.teksti }] };
   }
 }
 

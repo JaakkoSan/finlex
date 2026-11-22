@@ -28,6 +28,16 @@ async function tool(name, args) {
   return { isError: !!r.result.isError, text };
 }
 
+// Suora lähdefunktion kutsu (ei tool-apuria): lähteen virhe (esim. 503) on FAIL-rivi eikä pysäytä koko sarjaa.
+async function lahteesta(label, f) {
+  try {
+    return await f();
+  } catch (e) {
+    check(false, `${label}: lähde ei vastannut (${e?.name ?? "virhe"}${e?.status ? ` ${e.status}` : ""})`);
+    return null;
+  }
+}
+
 function check(cond, label) {
   console.log(`${cond ? "OK  " : "FAIL"} ${label}`);
   if (!cond) process.exitCode = 1;
@@ -89,6 +99,15 @@ function check(cond, label) {
   const u = await tool("hae_pykala", { vuosi: "x", numero: "1", pykala: "1" });
   check(u.isError && u.text.includes("vuosi"), "virheteksti: syötteen muotovirhe näkyy yhä");
 }
+// Liitteen virheet (v1.17.x)
+{
+  const l2 = await tool("hae_pykala", { vuosi: 1994, numero: "763", liite: "2" });
+  check(l2.isError && /Liitettä 2 ei ole\. Säädöksessä on 1 liite: 1 Liite/.test(l2.text), "liite: olematon numero kertoo liitteet");
+  const lp = await tool("hae_pykala", { vuosi: 1994, numero: "763", liite: "1", pykala: "13" });
+  check(lp.isError && lp.text.includes("joko liite tai pykälä"), "liite: ei yhdessä pykälän kanssa");
+  const le = await tool("hae_pykala", { vuosi: 2018, numero: "1050", liite: "1" });
+  check(le.isError && le.text.includes("ei ole liitteitä"), "liite: säädös ilman liitteitä");
+}
 
 const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } });
 check(init.result?.serverInfo?.name === "finlex", "initialize");
@@ -98,7 +117,7 @@ check(init.result?.serverInfo?.name === "finlex", "initialize");
   check(ins.length > 0 && ins.length < 4000, `palvelinohje ${ins.length} merkkiä (< 4000)`);
 }
 const list = await rpc("tools/list", {});
-check(list.result?.tools?.length === 32, "tools/list (32 työkalua)");
+check(list.result?.tools?.length === 33, "tools/list (33 työkalua)");
 
 const show = process.argv.includes("-v");
 const cases = [
@@ -112,6 +131,9 @@ const cases = [
   ["hae_pykala", { vuosi: 2006, numero: "624", pykala: "1" }, (t) => t.includes("Anna luku")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "999" }, (t) => t.includes("ei löytynyt")],
   ["etsi_saadoksesta", { vuosi: 1993, numero: "1501", hakusana: "maksuperust" }, (t) => t.includes("Osumat")],
+  // Säädöksen liitteet (terveydensuojelulain liite: ilmoituksenvaraiset toiminnot).
+  ["hae_pykala", { vuosi: 1994, numero: "763", liite: "1" }, (t) => t.includes("Liite") && t.includes("kauneushoitola") && t.includes(" | Kyllä")],
+  ["etsi_saadoksesta", { vuosi: 1994, numero: "763", hakusana: "kauneushoitola" }, (t) => t.includes("Osumat liitteissä") && t.includes("Liite 1") && t.includes("kauneushoitola")],
   ["hae_pykala", { vuosi: 2018, numero: "1050", pykala: "1", teksti: "alkuperainen" }, (t) => t.includes("ALKUPERÄINEN")],
   ["hae_pykala", { vuosi: 1993, numero: "1501", pykala: "3", versio: "448/2024" }, (t) => t.includes("3 §")],
   ["hae_pykala", { vuosi: 2019, numero: "872", pykala: "1", kieli: "swe" }, (t) => t.includes("1 §")],
@@ -238,7 +260,7 @@ for (const [name, args, pred] of cases) {
 // Pohjois-Savo (lisätty 13.11.2026): Liferayn syöte, linkeistä redirect-parametri pois, tekstin rajaus
 // sivun pshva_topic-page-osiosta ja yhteystietojen poisto.
 {
-  const items = await feedItems("pohjois_savo");
+  const items = (await lahteesta("Pohjois-Savo: syöte", () => feedItems("pohjois_savo"))) ?? [];
   check(items.length >= 20 && items.every((i) => i.title && i.date && /^https:\/\/pshyvinvointialue\.fi\/fi\/w\/[^?]+$/.test(i.link)), `Pohjois-Savo: syöte vastaa (${items.length} tiedotetta, otsikot, päivät, linkit ilman redirect-parametria)`);
   if (show) console.log(items.slice(0, 5).map((i) => `${i.date.slice(0, 10)} ${i.title}`).join("\n"));
   const a = await tool("viranomaistiedotteet", { viranomainen: "pshva", enintaan: 3 });
@@ -260,7 +282,8 @@ for (const [name, args, pred] of cases) {
   check(!t.isError && t.text.includes("Viimeinen ilmoittautumispäivä on 23.11.2026.") && !/puhelin 044|@pshyvinvointialue|Lisätietoja ja ilmoittautuminen/.test(t.text), "viranomaistiedote Pohjois-Savo: yhteystiedot pois, niiden jälkeinen rivi jää");
 }
 for (const key of [...Object.keys(HVA_FEEDS).filter((k) => HVA_FEEDS[k].page), "hus", "pirkanmaa"]) {
-  const items = await feedItems(key);
+  const items = await lahteesta(`viranomaistiedote ${key}: syöte`, () => feedItems(key));
+  if (!items?.length) continue;
   const it = items.find((i) => i.date) ?? items[0];
   const t0 = Date.now();
   const r = await tool("viranomaistiedote", { osoite: it.link });
@@ -335,7 +358,7 @@ const menBlock = (t, title) => {
 const menCases = [
   ["hae_men_lausuntoja", {}, (t) => t.includes("Ratkaisut:") && t.includes("- huomautus:") && t.includes("- 7 Markkinoinnin tunnistettavuus: ") && !t.includes("7 artikla - ") && t.includes(MEN_SRC)],
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja" }, (t) => /: \d+ osumaa, sivu 1\/\d+/.test(t) && t.includes("tunnus: men-") && t.includes("tiivistelmä:") && t.includes("ei sitova eikä viranomaispäätös") && t.includes(MEN_SRC)],
-  // Haku osui jäsenluetteloon (jäsenen titteli "vaikuttaja"); MEN 40/2026 Sports Lady suodatetaan pois (Ohjaamo C1).
+  // Haku osui jäsenluetteloon (jäsenen titteli "vaikuttaja"); MEN 40/2026 Sports Lady suodatetaan pois.
   ["hae_men_lausuntoja", { hakusana: "vaikuttaja", ratkaisu: "huomautus" }, (t) => t.includes("ennen suodatusta (arvio)") && /Tältä sivulta \d+ osumaa? suodatettiin pois, koska hakusana oli vain jäsenluettelossa\./.test(t) && !t.includes("Sports Lady") && !t.includes("Kouvolan Lakritsi") && t.includes("MEN 43/2026 Soluni Oy") && t.includes("Lisää tuloksia: sivu 2.")],
   // Listan kohdat (li) ovat lausunnon tekstiä: "verenpainee" on vain MEN 39/2026:n listakohdassa.
   ["hae_men_lausuntoja", { hakusana: "verenpainee" }, (t) => t.includes("MEN 39/2026 Kouvolan Lakritsi Oy") && !t.includes("suodatettiin pois") && /: 1 osuma, sivu 1\/1/.test(t)],
@@ -388,14 +411,116 @@ check(menCacheTtl([], 30 * 86400) === 3600 && menCacheTtl(null, 86400) === 3600 
 
 // Hyvinvointialueen tiedotteen päivä: otsikossa oleva muu päivä (15.11.) ei saa korvata julkaisupäivää (v1.16.1).
 {
-  const t = await itemText("https://www.hyvaep.fi/tiedote/vuodeosastoverkon-muutokset-ovat-edenneet-kurikan-akuuttiosasto-sulkeutuu-15-11-2026/");
+  const t = await lahteesta("HVA-tiedote", () => itemText("https://www.hyvaep.fi/tiedote/vuodeosastoverkon-muutokset-ovat-edenneet-kurikan-akuuttiosasto-sulkeutuu-15-11-2026/"));
   check(!t || t.date === "11.11.2026", `HVA-tiedote: julkaisupäivä eikä otsikon päivä (${t ? t.date : "sivu ei saatavilla"})`);
 }
 
-// Versio kolmessa paikassa (src/index.js, package.json, package-lock.json) ja MCP-palvelimen tiedoissa.
+// reklamaation_lainkohdat (v1.17.0): kartta ja muotoilu ilman verkkoa, sitten oikea haku.
+{
+  const R = await import("../src/reklamaatio.js");
+  const vale = { haeTeksti: async (l, p) => `${l} luku\n${p} § Otsikko\n  (1 mom.) ${"x".repeat(p === "13" ? 2000 : 50)}`, saados: async () => ({ otsikko: "Kuluttajansuojalaki (38/1978)", lahde: "https://www.finlex.fi/fi/lainsaadanto/1978/38" }) };
+  const kaikki = Object.entries(R.KARTTA).flatMap(([st, t]) => Object.keys(t).map((ti) => [st, ti]));
+  check(kaikki.length === 15 && Object.keys(R.SOPIMUSTYYPIT).every((k) => R.KARTTA[k]) && kaikki.every(([st, ti]) => R.TILANTEET[ti]), "reklamaatio: kartassa 5 sopimustyyppiä x 3 tilannetta");
+  check(kaikki.every(([st, ti]) => { const r = R.KARTTA[st][ti]; return r.soveltuminen === "ohjaus" ? r.pykalat.length === 0 && r.ohjaus : r.pykalat.length > 0; }), "reklamaatio: ohjausriveillä ei pykäliä, muilla vähintään yksi");
+  const d = await R.lainkohdat({ sopimustyyppi: " Tavara ", tilanne: "virhe" }, vale);
+  check(d.sopimustyyppi === "tavara" && d.pykalat.at(-1).luku === "4" && d.pykalat.at(-1).pykala === "1" && d.pykalat.find((p) => p.pykala === "16 a"), "reklamaatio: tavara virhe -> 5:16 a ja lopuksi 4:1 (sovittelu aina)");
+  const pitka = d.pykalat.find((p) => p.pykala === "13");
+  check(pitka.katkaistu && pitka.teksti.endsWith("[...]") && pitka.teksti.length <= R.TEKSTI_MAX + 6 && /katkaistu 1500 merkkiin/.test(R.lainkohdatTeksti(d)), "reklamaatio: pitkä pykälä katkaistaan ja siitä kerrotaan");
+  const m = await R.lainkohdat({ sopimustyyppi: "muu_palvelu", tilanne: "peruutus" }, vale);
+  const mt = R.lainkohdatTeksti(m);
+  check(m.soveltuminen === "periaatteena" && /eivät kuulu 8 lukuun sellaisenaan/.test(mt) && /kohtuullisuutta \(4 luku 1 §\)/.test(mt), "reklamaatio: muu palvelu -> periaatteena, peruutusehdot ja 4:1");
+  check(/ei oikeudellista neuvontaa/.test(mt) && /suosituksia/.test(mt) && /Lähde: https:\/\/www\.finlex\.fi\/fi\/lainsaadanto\/1978\/38/.test(mt) && /hae_kril_ratkaisuja/.test(mt), "reklamaatio: vastuurajaus, Lähde-linkki ja seuraava työkalu");
+  const o = await R.lainkohdat({ sopimustyyppi: "tavara", tilanne: "peruutus" }, vale);
+  check(o.soveltuminen === "ohjaus" && o.pykalat.length === 1 && /etamyynti/.test(R.lainkohdatTeksti(o)), "reklamaatio: tavaran peruutus -> ohjaus etämyyntiin");
+  let virhe = null;
+  try { await R.lainkohdat({ sopimustyyppi: "palvelu", tilanne: "virhe" }, vale); } catch (e) { virhe = e; }
+  check(virhe instanceof R.ReklamaatioVirhe && /sallitut arvot tavara, digitaalinen/.test(virhe.message), "reklamaatio: tuntematon sopimustyyppi -> selkeä virhe");
+  const vr = await tool("reklamaation_lainkohdat", { sopimustyyppi: "tavara" });
+  check(vr.isError && /Kenttä tilanne: sallitut arvot virhe, viivastys, peruutus/.test(vr.text), "reklamaatio: puuttuva tilanne -> käyttäjän virhe työkalusta", vr.text);
+  const os = list.result.tools.find((t) => t.name === "reklamaation_lainkohdat");
+  check(os?.outputSchema?.required?.includes("pykalat") && os.annotations?.readOnlyHint === true, "reklamaatio: outputSchema ja vain luku");
+  // Oikea haku Finlexistä: jokainen pykälä löytyy ja otsikko vastaa Finlexin otsikkoa.
+  const r = await rpc("tools/call", { name: "reklamaation_lainkohdat", arguments: { sopimustyyppi: "muu_palvelu", tilanne: "peruutus" } });
+  const sc = r.result?.structuredContent;
+  check(!r.result?.isError && sc?.pykalat?.length === 4 && sc.pykalat.every((p) => p.teksti.includes(`${p.pykala} §`) && p.teksti.includes(p.otsikko.split(" (")[0])) && /AJANTASAINEN/.test(r.result.content[0].text), "reklamaatio: oikea haku Finlexistä (8:26, 8:30, 8:33, 4:1), otsikot vastaavat", r.result?.content?.[0]?.text?.slice(0, 300));
+}
+
+// Rakenteiset hakulistat (v1.19.0, koodiajo-valmius): tyokalu()-muoto, outputSchema, structuredContent ja sivutus.
+// Palvelin rungon testitilassa: structuredContent tarkistetaan tulosSkeemaa vasten ja lahde.nimi vaaditaan.
+{
+  const { luoFinlex } = await import("../src/index.js");
+  const varoitukset = [];
+  const testi = luoFinlex({ tarkistaTulokset: true, varoita: (v) => varoitukset.push(v) });
+  const kutsu = async (name, args) => {
+    const res = await testi.fetch(new Request("https://example.test/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }),
+    }), env);
+    const j = await res.json();
+    return { r: j.result, text: j.result?.content?.map((c) => c.text).join("\n") ?? "", sc: j.result?.structuredContent, virhe: j.error };
+  };
+  const RAKENTEISET = ["hae_saadoksia", "hae_hallituksen_esityksia", "hae_ratkaisuja", "hae_tyoehtosopimuksia", "viranomaistiedotteet"];
+  for (const n of RAKENTEISET) {
+    const m = list.result.tools.find((t) => t.name === n);
+    check(m?.outputSchema?.oneOf?.length === 2 && m.annotations?.readOnlyHint === true && m.annotations?.destructiveHint === false, `rakenteinen ${n}: outputSchema ja vain luku`);
+  }
+  check(!varoitukset.length, `rakenteiset: ei rungon varoituksia${varoitukset.length ? `: ${varoitukset.join(" | ")}` : ""}`);
+  const testit = [
+    ["hae_saadoksia", { otsikko: "arvonlisäverolaki" }, (sc) => sc.saadokset.some((r) => r.tunnus === "1501/1993" && r.vuosi === 1993 && r.numero === "1501" && r.linkki.startsWith("https://www.finlex.fi/")) && sc.sivu === 1],
+    ["hae_saadoksia", { otsikko: "laki" }, (sc) => sc.saadokset.length > 0 && sc.seuraava === 2 && sc.sivuja === 2],
+    ["hae_hallituksen_esityksia", { otsikko: "arvonlisäverolaiksi", paattyen_vuosi: 1995 }, (sc) => sc.esitykset.some((r) => r.tunnus === "HE 88/1993" && r.linkki.includes("/hallituksen-esitykset/1993/88"))],
+    ["hae_ratkaisuja", { lahde: "tietosuojavaltuutettu", asiasana: "kameravalvonta" }, (sc) => sc.ratkaisija === "Tietosuojavaltuutettu" && sc.ratkaisut.length > 0 && sc.ratkaisut.every((r) => r.vuosi && r.numero && r.linkki)],
+    ["hae_ratkaisuja", { lahde: "oikeuskansleri" }, (sc) => sc.oletusvuodet?.paattyen === new Date().getUTCFullYear()],
+    ["hae_tyoehtosopimuksia", { hakusana: "sosiaali" }, (sc) => sc.sopimukset.some((r) => r.tunnus === "2017/3" && /Hyvinvointialan liitto ry/.test(r.tyonantajat ?? "")) && sc.yhteensa === sc.sopimukset.length && sc.rajattu === false && sc.tiivis === false],
+    ["hae_tyoehtosopimuksia", {}, (sc) => sc.tiivis === true && sc.yhteensa > 50 && sc.sopimukset.length === 50 && sc.rajattu === true && !("kaikkiRivit" in sc)],
+    ["viranomaistiedotteet", { viranomainen: "tietosuoja,kyber,kkv", enintaan: 5 }, (sc) => sc.naytetaan <= 5 && sc.tiedotteet.length === sc.naytetaan && sc.valtion_viranomaiset === true && sc.hyvinvointialueet.length === 0],
+    ["viranomaistiedotteet", { viranomainen: "hus,helsinki", enintaan: 3 }, (sc) => sc.valtion_viranomaiset === false && sc.hyvinvointialueet.length === 2],
+  ];
+  for (const [n, a, ehto] of testit) {
+    let t;
+    try {
+      t = await kutsu(n, a);
+    } catch (e) {
+      check(false, `rakenteinen ${n} ${JSON.stringify(a)}: ${e?.message ?? e}`);
+      continue;
+    }
+    if (t.r?.isError && t.sc?.virhe?.koodi === "lahde") {
+      check(false, `rakenteinen ${n} ${JSON.stringify(a)}: lähde ei vastannut (${t.sc.virhe.lahteen_koodi ?? "?"})`);
+      continue;
+    }
+    check(!t.virhe && !t.r?.isError && t.sc && ehto(t.sc) && !("lahteenRiveja" in t.sc) && typeof t.sc.lahde?.nimi === "string", `rakenteinen ${n} ${JSON.stringify(a)}`);
+  }
+  // Virheet: sama teksti kuin ennen ja rakenteinen virhe koodeineen.
+  const v1 = await kutsu("hae_saadoksia", {});
+  check(v1.r?.isError && v1.text === "Anna otsikko tai asiasana." && v1.sc?.virhe?.koodi === "syote", "rakenteinen virhe: syöte (hae_saadoksia ilman hakuehtoja)");
+  const v2 = await kutsu("viranomaistiedotteet", { viranomainen: "lappi" });
+  check(v2.r?.isError && v2.text.startsWith("Hyvinvointialueilta puuttuvat") && v2.sc?.virhe?.koodi === "syote", "rakenteinen virhe: puuttuva hyvinvointialue");
+  const v3 = await kutsu("hae_saadoksia", { otsikko: "laki", sivu: 31 });
+  check(v3.r?.isError && v3.text.startsWith("Sivuja voi selata enintään 30") && v3.sc?.virhe?.koodi === "syote", "rakenteinen virhe: liian suuri sivu");
+  // Lähteen virhe: sama teksti kuin callTool-polulla, koodi lahde ja lähteen tila.
+  const orig = globalThis.fetch;
+  globalThis.fetch = async () => new Response("kielletty", { status: 403 });
+  try {
+    const v4 = await kutsu("hae_hallituksen_esityksia", { otsikko: "koe-" + Date.now() });
+    check(v4.r?.isError && v4.text.startsWith("Finlex-haku epäonnistui:") && v4.sc?.virhe?.koodi === "lahde", "rakenteinen virhe: lähteen virhe (Finlex)", v4.text);
+  } finally {
+    globalThis.fetch = orig;
+  }
+}
+
+// Versio package.jsonissa ja package-lock.jsonissa sekä MCP-palvelimen tiedoissa (SERVER_INFO luetaan package.jsonista, v1.18.0; v1.19.0).
 {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
-  const idx = readFileSync(new URL("../src/index.js", import.meta.url), "utf8").match(/SERVER_INFO = \{ name: "finlex", version: "([^"]+)" \}/)?.[1];
-  check(pkg === "1.16.5" && lock.version === pkg && lock.packages?.[""]?.version === pkg && idx === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} kolmessa paikassa`);
+  check(pkg === "1.19.0" && lock.version === pkg && lock.packages?.[""]?.version === pkg && init.result?.serverInfo?.version === pkg, `versio ${pkg} package.jsonissa, package-lock.jsonissa ja serverInfossa`);
+}
+
+// Yhteinen runko (v1.18.0): kopio ehjä (otsakkeen sha256 vastaa sisältöä) ja User-Agent package.jsonin versiosta.
+{
+  const { tarkistaKopio, userAgent } = await import("../src/mcp-runko.js");
+  const k = await tarkistaKopio(readFileSync(new URL("../src/mcp-runko.js", import.meta.url), "utf8"));
+  check(k.ok && k.versio === "1.1.0", `mcp-runko-kopio ehjä (${k.versio})`);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  check(userAgent("finlex", pkg) === `finlex-mcp/${pkg} (Claude-liitin; Cloudflare Worker)`, `User-Agent finlex-mcp/${pkg}`);
 }

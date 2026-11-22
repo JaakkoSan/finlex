@@ -5,9 +5,11 @@
 // vastaukset välimuistitetaan.
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
 export const EDK_API = "https://api.eduskunta.fi/api/v1";
-const USER_AGENT = "finlex-mcp/1.8 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 

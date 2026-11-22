@@ -6,10 +6,12 @@
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
 import { decode, htmlText } from "./tiedotteet.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
 export const KRIL_BASE = "https://www.kuluttajariita.fi";
 const API = `${KRIL_BASE}/wp-json/wp/v2`;
-const USER_AGENT = "finlex-mcp/1.14 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const SEARCH_TTL = 86400; // haut 1 vrk
 const DECISION_TTL = 30 * 86400; // ratkaisut 30 vrk
 const TERM_TTL = 7 * 86400; // teemat 7 vrk

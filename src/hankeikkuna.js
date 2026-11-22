@@ -5,10 +5,12 @@
 // tallennetaan vain tiivistetyt tiedot.
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
+import { userAgent } from "./mcp-runko.js";
+import pkg from "../package.json" with { type: "json" };
 
 export const HK_API = "https://api.hankeikkuna.fi/api/v2";
 export const HK_DOC_PREFIX = "https://api.hankeikkuna.fi/asiakirjat/";
-const USER_AGENT = "finlex-mcp/1.6 (Claude-liitin; Cloudflare Worker)";
+const USER_AGENT = userAgent("finlex", pkg.version);
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 const CACHE_V = 1;
