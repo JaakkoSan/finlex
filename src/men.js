@@ -2,7 +2,7 @@
 // WordPress-rajapinnasta (/wp-json/wp/v2/men ja luokittelut men_decision, men_icc, men_media, men_date).
 // Avainta ei tarvita. robots.txt sallii kaiken (tarkistettu 13.11.2026). Käyttöehtojen mukaan aineistoa
 // saa lainata tekijänoikeuslain mukaisesti lähde mainiten, joten lausunnosta näytetään vain lainaus:
-// tiivistelmä, tietorivit ja yksi lohko rajattuna tai hakusanan otteet (käyttäjä 13.11.2026 Ohjaamo J1).
+// tiivistelmä, tietorivit ja yksi lohko rajattuna tai hakusanan otteet (päätös 13.11.2026).
 // Pyynnöt rajataan _fields-parametrilla, ja tulokset ovat välimuistissa (Cache API).
 
 import { FinlexError, cacheGetJson, cachePutJson } from "./finlex.js";
@@ -206,7 +206,7 @@ export function statementSearchText(html) {
 /**
  * Osuuko haku lausuntoon ilman allekirjoitusosaa? "ok", "signature" (puuttuva termi löytyy vain
  * allekirjoitusosasta eli jäsenluettelosta) tai "other" (termiä ei löydy tekstistä, esim. vain HTML-koodissa;
- * näytetään normaalisti, koska päätös C1 koskee vain jäsenluetteloa).
+ * näytetään normaalisti, koska päätös 13.11.2026 koskee vain jäsenluetteloa).
  */
 export function menQueryMatch(d, terms) {
   if (!terms.length) return "ok";
@@ -221,7 +221,7 @@ export function menQueryMatch(d, terms) {
 /**
  * Haku: { items, total, pages, removed: { signature } }. Suodattimet ovat termien id-listoja.
  * Hakusanalla WordPress osuu myös allekirjoitusosan jäsenluetteloon (esim. jäsenen titteli "vaikuttaja"),
- * joten sivun tulokset tarkistetaan tekstistä ilman allekirjoitusosaa (käyttäjä 13.11.2026 Ohjaamo C1).
+ * joten sivun tulokset tarkistetaan tekstistä ilman allekirjoitusosaa (päätös 13.11.2026).
  * total ja pages ovat WordPressin luvut ennen suodatusta. Välimuistiin tallennetaan tulos ilman tekstiä.
  */
 export async function searchStatements({ query, decisionIds, iccIds, mediaIds, yearIds, page, tax }) {
